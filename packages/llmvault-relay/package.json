@@ -1,0 +1,70 @@
+{
+  "name": "llmvault-relay",
+  "version": "0.1.0",
+  "description": "Zero-knowledge E2E encrypted WebSocket relay for pairing a browser with a mobile LLM wallet. Ships a browser client, a Cloudflare Durable Object, and a Hono route factory.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./client": {
+      "import": "./dist/client/index.js",
+      "types": "./dist/client/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server/index.js",
+      "types": "./dist/server/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "llm",
+    "llmvault",
+    "phone-wallet-relay",
+    "e2e-encryption",
+    "ecdh",
+    "websocket",
+    "cloudflare-workers",
+    "durable-objects",
+    "byok"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/R-Okauchi/llmvault.git",
+    "directory": "packages/llmvault-relay"
+  },
+  "homepage": "https://github.com/R-Okauchi/llmvault#readme",
+  "bugs": "https://github.com/R-Okauchi/llmvault/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/client/index.ts src/server/index.ts --format esm --dts --out-dir dist --external cloudflare:workers --external hono",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "hono": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "hono": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250521.0",
+    "hono": "^4.7.11",
+    "tsup": "^8.5.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
+  }
+}

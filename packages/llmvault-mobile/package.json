@@ -1,0 +1,68 @@
+{
+  "name": "llmvault-mobile",
+  "version": "0.1.0",
+  "description": "Bring Your Own Key on mobile — Capacitor plugin that stores LLM API keys in iOS Keychain / Android Keystore and calls providers directly from native code. Biometric-gated, policy-enforced, E2E-pairable.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "LlmvaultMobile.podspec",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "llm",
+    "llmvault",
+    "capacitor",
+    "capacitor-plugin",
+    "ios",
+    "android",
+    "keychain",
+    "keystore",
+    "biometric",
+    "byok",
+    "security"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/R-Okauchi/llmvault.git",
+    "directory": "packages/llmvault-mobile"
+  },
+  "homepage": "https://github.com/R-Okauchi/llmvault#readme",
+  "bugs": "https://github.com/R-Okauchi/llmvault/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@capacitor/core": "^7.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
+  }
+}

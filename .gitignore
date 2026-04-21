@@ -1,0 +1,20 @@
+node_modules/
+dist/
+dist-chrome/
+dist-firefox/
+*.zip
+coverage/
+.DS_Store
+
+# Capacitor plugin build artifacts
+packages/llmvault-mobile/android/build/
+packages/llmvault-mobile/android/.gradle/
+packages/llmvault-mobile/ios/build/
+packages/llmvault-mobile/ios/Pods/
+
+# Local editor / env
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/

@@ -1,0 +1,54 @@
+{
+  "name": "llmvault-extension",
+  "version": "0.1.0",
+  "description": "LLMVault browser extension — Manifest V3 BYOK wallet for Chrome and Firefox. Stores LLM API keys in chrome.storage.session and calls providers directly from a service worker.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "llm",
+    "llmvault",
+    "browser-extension",
+    "chrome-extension",
+    "firefox-addon",
+    "manifest-v3",
+    "byok",
+    "security"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/R-Okauchi/llmvault.git",
+    "directory": "packages/llmvault-extension"
+  },
+  "homepage": "https://github.com/R-Okauchi/llmvault#readme",
+  "bugs": "https://github.com/R-Okauchi/llmvault/issues",
+  "files": [
+    "dist-chrome",
+    "dist-firefox",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "dev:firefox": "BROWSER_TARGET=firefox vite build --watch",
+    "build": "vite build",
+    "build:firefox": "BROWSER_TARGET=firefox vite build",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "zip:chrome": "pnpm build && cd dist-chrome && zip -r ../llmvault-extension-chrome.zip .",
+    "zip:firefox": "pnpm build:firefox && cd dist-firefox && zip -r ../llmvault-extension-firefox.zip .",
+    "sign:firefox": "web-ext sign --source-dir=dist-firefox --api-key=$WEB_EXT_API_KEY --api-secret=$WEB_EXT_API_SECRET --channel=listed"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.9.6",
+    "@types/chrome": "^0.1.39",
+    "preact": "^10.26.6",
+    "typescript": "^5.8.3",
+    "vite": "^6.4.1",
+    "vitest": "^3.2.1",
+    "web-ext": "^10.1.0"
+  }
+}

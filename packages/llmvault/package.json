@@ -1,0 +1,51 @@
+{
+  "name": "llmvault",
+  "version": "0.1.0",
+  "description": "Bring Your Own Key to any web app — without trusting their server. Browser extension SDK for secure LLM API key management.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "llm",
+    "llmvault",
+    "openai",
+    "anthropic",
+    "api-key",
+    "browser-extension",
+    "security",
+    "byok"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/R-Okauchi/llmvault.git",
+    "directory": "packages/llmvault"
+  },
+  "homepage": "https://github.com/R-Okauchi/llmvault#readme",
+  "bugs": "https://github.com/R-Okauchi/llmvault/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
+  }
+}

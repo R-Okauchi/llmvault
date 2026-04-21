@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>LLMVault</title>
+  <!--
+    Safe-dial icon. An asymmetric T-handle on the right breaks the rotational
+    symmetry so it does not read as a crosshair. Tick marks live on the outer
+    rim (clock-face style) rather than as inward spokes.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#312e81"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <radialGradient id="face" cx="0.4" cy="0.35" r="0.85">
+      <stop offset="0%"  stop-color="#f1f5f9"/>
+      <stop offset="100%" stop-color="#cbd5e1"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Rounded background tile -->
+  <rect x="4" y="4" width="120" height="120" rx="24" ry="24" fill="url(#bg)"/>
+
+  <!-- T-handle (behind the dial so the bar appears to emerge from the rim) -->
+  <g fill="#e0e7ff">
+    <!-- horizontal shaft -->
+    <rect x="82" y="59" width="32" height="10" rx="3"/>
+    <!-- outer grip (vertical cap) -->
+    <rect x="106" y="49" width="10" height="30" rx="3"/>
+  </g>
+
+  <!-- Dial face (offset slightly left to leave room for handle) -->
+  <circle cx="58" cy="64" r="36" fill="url(#face)" stroke="#475569" stroke-width="3"/>
+
+  <!-- Combination tick marks on the rim (12 around the clock) -->
+  <g stroke="#334155" stroke-width="3" stroke-linecap="round">
+    <line x1="58" y1="32" x2="58" y2="38"/>
+    <line x1="58" y1="90" x2="58" y2="96"/>
+    <line x1="26" y1="64" x2="32" y2="64"/>
+    <line x1="84" y1="64" x2="90" y2="64"/>
+    <!-- diagonals -->
+    <line x1="36" y1="42" x2="40" y2="46"/>
+    <line x1="80" y1="42" x2="76" y2="46"/>
+    <line x1="36" y1="86" x2="40" y2="82"/>
+    <line x1="80" y1="86" x2="76" y2="82"/>
+  </g>
+
+  <!-- Indicator arrow at 12 o'clock (red notch, points down into dial) -->
+  <path d="M55 26 L61 26 L58 34 Z" fill="#ef4444"/>
+
+  <!-- Center pin / hub -->
+  <circle cx="58" cy="64" r="7" fill="#1e293b"/>
+  <circle cx="58" cy="64" r="3" fill="#94a3b8"/>
+</svg>
