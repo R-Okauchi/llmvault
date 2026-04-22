@@ -79,3 +79,15 @@ export async function removeBinding(origin: string): Promise<void> {
   const filtered = rows.filter((b) => b.origin !== origin);
   await ext.storage.local.set({ [BINDINGS_KEY]: filtered });
 }
+
+/**
+ * Drop every binding that references the given keyId. Used when a key is
+ * deleted so the affected origins re-prompt consent on their next access
+ * instead of silently falling through to a different default key.
+ */
+export async function removeBindingsForKey(keyId: string): Promise<void> {
+  const rows = await getBindings();
+  const filtered = rows.filter((b) => b.keyId !== keyId);
+  if (filtered.length === rows.length) return;
+  await ext.storage.local.set({ [BINDINGS_KEY]: filtered });
+}

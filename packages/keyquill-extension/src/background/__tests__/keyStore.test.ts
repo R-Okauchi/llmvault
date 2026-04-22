@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // In-memory mock of chrome.storage.session
 const storage: Record<string, unknown> = {};
 
+const localStorage: Record<string, unknown> = {};
+
 const mockChrome = {
   storage: {
     session: {
@@ -24,9 +26,22 @@ const mockChrome = {
       }),
     },
     local: {
-      get: vi.fn(async () => ({})),
-      set: vi.fn(async () => {}),
-      remove: vi.fn(async () => {}),
+      get: vi.fn(async (key: string | string[]) => {
+        if (typeof key === "string") return { [key]: localStorage[key] };
+        if (Array.isArray(key)) {
+          const out: Record<string, unknown> = {};
+          for (const k of key) out[k] = localStorage[k];
+          return out;
+        }
+        return { ...localStorage };
+      }),
+      set: vi.fn(async (obj: Record<string, unknown>) => {
+        Object.assign(localStorage, obj);
+      }),
+      remove: vi.fn(async (key: string | string[]) => {
+        const keys = Array.isArray(key) ? key : [key];
+        for (const k of keys) delete localStorage[k];
+      }),
     },
   },
 };
@@ -40,14 +55,16 @@ if (!globalThis.crypto) {
   // @ts-expect-error — partial mock
   globalThis.crypto = {};
 }
-// @ts-expect-error — override for determinism
-globalThis.crypto.randomUUID = () => `uuid-${++uuidCounter}` as `${string}-${string}-${string}-${string}-${string}`;
+globalThis.crypto.randomUUID = () =>
+  `uuid-${++uuidCounter}` as `${string}-${string}-${string}-${string}-${string}`;
 
 const { addKey, getKeys, setDefault, deleteKey, updateKey, getDefaultKeyForProvider } =
   await import("../keyStore.js");
+const { getBindings, setBinding } = await import("../bindingStore.js");
 
 function reset() {
   for (const k of Object.keys(storage)) delete storage[k];
+  for (const k of Object.keys(localStorage)) delete localStorage[k];
   uuidCounter = 0;
 }
 
@@ -183,6 +200,33 @@ describe("keyStore v2", () => {
       expect(keys).toHaveLength(1);
       expect(keys[0].label).toBe("Personal (updated)");
       expect(keys[0].isDefault).toBe(true);
+    });
+
+    it("cascades: drops bindings that referenced the deleted key", async () => {
+      const work = await addKey({
+        provider: "openai",
+        label: "Work",
+        apiKey: "sk-w",
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-4.1-mini",
+      });
+      const personal = await addKey({
+        provider: "openai",
+        label: "Personal",
+        apiKey: "sk-p",
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-4.1-mini",
+      });
+      await setBinding("https://github.com", work.keyId);
+      await setBinding("https://claude.ai", work.keyId);
+      await setBinding("https://example.com", personal.keyId);
+
+      await deleteKey(work.keyId);
+
+      const bindings = await getBindings();
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0].origin).toBe("https://example.com");
+      expect(bindings[0].keyId).toBe(personal.keyId);
     });
   });
 
