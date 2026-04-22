@@ -12,6 +12,7 @@
 
 import type { KeyRecord, KeySummary } from "../shared/protocol.js";
 import { ext } from "../shared/browser.js";
+import { removeBindingsForKey } from "./bindingStore.js";
 
 const STORAGE_KEY = "keyquill_keys";
 const LEGACY_STORAGE_KEY = "keyquill_providers";
@@ -187,6 +188,10 @@ export async function deleteKey(keyId: string): Promise<void> {
     }
   }
   await ext.storage.session.set({ [STORAGE_KEY]: filtered });
+  // Cascade: drop per-origin bindings that referenced this key so the next
+  // access from those origins re-prompts consent instead of silently
+  // falling back to a different default.
+  await removeBindingsForKey(keyId);
 }
 
 /**
