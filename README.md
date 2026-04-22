@@ -60,13 +60,17 @@ pnpm -r typecheck
 
 ## Releases
 
-Versions are synchronized across all four packages via [changesets](https://github.com/changesets/changesets) `fixed` groups. See [`.changeset/config.json`](.changeset/config.json).
+Versions of the three published packages (`llmvault`, `llmvault-mobile`, `llmvault-relay`) are kept in lockstep via a [changesets](https://github.com/changesets/changesets) `fixed` group. See [`.changeset/config.json`](.changeset/config.json). `llmvault-extension` is `ignore`d here and distributed through browser add-on stores instead.
 
-```bash
-pnpm changeset           # create a changeset
-pnpm version             # apply version bumps
-pnpm release             # build + npm publish (CI only)
-```
+Publishing is fully automated by [`changesets/action`](https://github.com/changesets/action) in [`.github/workflows/release.yml`](.github/workflows/release.yml):
+
+1. Make your change on a feature branch.
+2. Record the change: `pnpm changeset` (pick bump level + summary).
+3. Commit the generated `.changeset/*.md` file with your PR and merge to `main`.
+4. A bot opens a **"Version Packages"** PR that bumps `package.json` versions and writes `CHANGELOG.md` entries.
+5. Merge that PR → CI runs `changeset publish`, pushes tarballs to npm, and creates tagged GitHub Releases.
+
+The CI-side scripts are named `ci:version` / `ci:release` instead of `version` / `release` to avoid a collision with pnpm's built-in `version` subcommand.
 
 ## License
 
