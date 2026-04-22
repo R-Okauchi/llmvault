@@ -7,15 +7,22 @@
     <meta name="description" content="Live demo of the Keyquill browser extension + SDK. Bring Your Own Key, no server." />
     <style>
       :root {
-        color-scheme: dark;
-        --bg: #0f172a;
-        --bg-elev: #1e293b;
-        --fg: #e2e8f0;
-        --muted: #94a3b8;
-        --accent: #818cf8;
-        --accent-hover: #6366f1;
-        --danger: #f87171;
-        --border: #334155;
+        color-scheme: light;
+        /* Brand palette: silver-gray metallic body, warm gold accents.
+           Matches source-tile.png (corners #8a9096, center #b8b6ae) and
+           the gold tones in the key+quill icon. */
+        --bg-page: linear-gradient(135deg, #dcdbd5 0%, #b8b6ae 100%);
+        --bg-card: #f6f5f2;
+        --bg-input: #ffffff;
+        --fg: #14182b;
+        --muted: #64748b;
+        --accent: #b8891f;        /* warm gold, darkened for contrast on light bg */
+        --accent-hover: #996f18;
+        --on-accent: #fffef6;
+        --danger: #b91c1c;
+        --border: #c8c7c1;
+        --border-strong: #8a9096;
+        --shadow: 0 1px 2px rgba(20, 24, 43, 0.06), 0 4px 12px rgba(20, 24, 43, 0.08);
         --radius: 8px;
       }
       * { box-sizing: border-box; }
@@ -23,60 +30,64 @@
         margin: 0;
         padding: 24px 16px;
         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        background: var(--bg);
+        background: var(--bg-page);
+        background-attachment: fixed;
         color: var(--fg);
         line-height: 1.5;
+        min-height: 100vh;
       }
       .wrap { max-width: 720px; margin: 0 auto; }
       header { margin-bottom: 32px; }
-      h1 { margin: 0 0 8px; font-size: 1.75rem; }
+      h1 { margin: 0 0 8px; font-size: 1.75rem; color: var(--fg); letter-spacing: -0.01em; }
       .subtitle { color: var(--muted); margin: 0 0 16px; }
       #status {
         padding: 10px 14px;
         border-radius: var(--radius);
-        background: var(--bg-elev);
+        background: var(--bg-card);
         border: 1px solid var(--border);
         font-size: 0.95rem;
+        box-shadow: var(--shadow);
       }
       #status.err { border-color: var(--danger); color: var(--danger); }
       #status.ok { border-color: var(--accent); color: var(--accent); }
       main section { margin-top: 24px; }
       .card {
         padding: 20px;
-        background: var(--bg-elev);
+        background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: var(--radius);
+        box-shadow: var(--shadow);
       }
       button {
         cursor: pointer;
         padding: 10px 18px;
         background: var(--accent);
-        color: #0f172a;
+        color: var(--on-accent);
         border: 0;
         border-radius: var(--radius);
         font-weight: 600;
         font-size: 0.95rem;
       }
-      button:hover { background: var(--accent-hover); color: #fff; }
+      button:hover { background: var(--accent-hover); }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
       textarea {
         width: 100%;
         padding: 10px 12px;
-        background: var(--bg);
+        background: var(--bg-input);
         color: var(--fg);
-        border: 1px solid var(--border);
+        border: 1px solid var(--border-strong);
         border-radius: var(--radius);
         font-family: inherit;
         font-size: 0.95rem;
         resize: vertical;
         min-height: 80px;
       }
-      textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+      textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
       #chat-form { display: flex; flex-direction: column; gap: 12px; }
       #output {
         margin-top: 16px;
         padding: 16px;
-        background: var(--bg);
+        background: var(--bg-input);
         border: 1px solid var(--border);
         border-radius: var(--radius);
         white-space: pre-wrap;
@@ -84,22 +95,23 @@
         font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
         font-size: 0.9rem;
         min-height: 60px;
+        color: var(--fg);
       }
       footer {
         margin-top: 48px;
         padding-top: 20px;
-        border-top: 1px solid var(--border);
+        border-top: 1px solid var(--border-strong);
         color: var(--muted);
         font-size: 0.85rem;
         display: flex;
         gap: 16px;
         flex-wrap: wrap;
       }
-      a { color: var(--accent); }
-      a:hover { color: var(--accent-hover); }
+      a { color: var(--accent); text-decoration: underline; text-decoration-color: rgba(184, 137, 31, 0.35); }
+      a:hover { color: var(--accent-hover); text-decoration-color: currentColor; }
       code {
         padding: 2px 6px;
-        background: var(--bg);
+        background: var(--bg-input);
         border: 1px solid var(--border);
         border-radius: 4px;
         font-size: 0.85em;
