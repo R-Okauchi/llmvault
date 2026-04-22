@@ -33,7 +33,7 @@ Publish `docs/privacy-policy.md` via GitHub Pages:
 
 1. In the GitHub repo settings, enable Pages (source: `main` branch, `docs/` folder or root).
 2. Verify the URL resolves:
-   - `https://R-Okauchi.github.io/llmvault/privacy-policy/`
+   - `https://r-okauchi.github.io/llmvault/privacy-policy/`
 3. Use this URL in both Chrome and Firefox submission forms.
 
 ### 4. Firefox `gecko.id`
