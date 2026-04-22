@@ -78,7 +78,7 @@ function App() {
   return (
     <div>
       <h1>
-        <span class="icon">🔐</span> Keyquill
+        <img class="icon" src="/icons/icon-48.png" alt="" /> Keyquill
       </h1>
 
       {providers.length > 0 && (

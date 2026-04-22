@@ -32,7 +32,7 @@ function ConsentApp() {
 
   return (
     <div class="consent">
-      <div class="consent__icon">🔐</div>
+      <img class="consent__icon" src="/icons/icon-128.png" alt="Keyquill" />
       <h1>Connection Request</h1>
       <div class="origin">{hostname}</div>
       <div class="origin-full">{origin}</div>
