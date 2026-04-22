@@ -1,6 +1,6 @@
 {
   "name": "llmvault-mobile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bring Your Own Key on mobile — Capacitor plugin that stores LLM API keys in iOS Keychain / Android Keystore and calls providers directly from native code. Biometric-gated, policy-enforced, E2E-pairable.",
   "type": "module",
   "main": "./dist/index.js",

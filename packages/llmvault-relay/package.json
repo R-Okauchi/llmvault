@@ -1,6 +1,6 @@
 {
   "name": "llmvault-relay",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Zero-knowledge E2E encrypted WebSocket relay for pairing a browser with a mobile LLM wallet. Ships a browser client, a Cloudflare Durable Object, and a Hono route factory.",
   "type": "module",
   "main": "./dist/index.js",
