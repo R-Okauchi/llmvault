@@ -404,6 +404,221 @@
         padding: 3px 8px;
         font-size: 11px;
       }
+      .btn--active {
+        background: #e0e7ff;
+        color: #3730a3;
+        border-color: #c7d2fe;
+      }
+
+      /* ── Spend bar (per-key monthly spend indicator) ── */
+      .spend-bar {
+        margin: 4px 0 6px;
+      }
+      .spend-bar__label {
+        font-size: 11px;
+        color: #475569;
+        margin-bottom: 2px;
+      }
+      .spend-bar__suffix {
+        color: #94a3b8;
+      }
+      .spend-bar__track {
+        height: 4px;
+        background: #f1f5f9;
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .spend-bar__fill {
+        height: 100%;
+        transition: width 0.2s;
+      }
+      .spend-bar__fill--ok {
+        background: #16a34a;
+      }
+      .spend-bar__fill--warn {
+        background: #ea580c;
+      }
+      .spend-bar__fill--danger {
+        background: #dc2626;
+      }
+
+      /* ── Policy editor (expandable panel) ── */
+      .policy-editor {
+        margin-top: 10px;
+        padding: 10px;
+        background: #f8f9fc;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+      }
+      .policy-editor__tabs {
+        display: flex;
+        gap: 2px;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .policy-editor__tab {
+        background: transparent;
+        border: 0;
+        padding: 5px 8px;
+        font-size: 11px;
+        font-weight: 500;
+        text-transform: capitalize;
+        color: #64748b;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+      }
+      .policy-editor__tab:hover {
+        color: #1a1a2e;
+      }
+      .policy-editor__tab--active {
+        color: #2563eb;
+        border-bottom-color: #2563eb;
+      }
+      .policy-editor__pane {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .policy-editor__pane label {
+        font-size: 11px;
+        font-weight: 500;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        color: #334155;
+      }
+      .policy-editor__pane input,
+      .policy-editor__pane select,
+      .policy-editor__pane textarea {
+        padding: 5px 7px;
+        border: 1px solid #d1d5db;
+        border-radius: 5px;
+        font-size: 12px;
+        font-family: inherit;
+        background: #fff;
+      }
+      .policy-editor__pane textarea {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        resize: vertical;
+      }
+      .policy-editor__checkbox {
+        flex-direction: row !important;
+        align-items: center;
+        gap: 6px !important;
+      }
+      .policy-editor__checkbox input {
+        width: auto;
+      }
+      .policy-editor__hint {
+        font-size: 11px;
+        color: #64748b;
+        line-height: 1.4;
+      }
+      .policy-editor__actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #e5e7eb;
+      }
+
+      /* ── Audit log panel ── */
+      .audit-panel {
+        margin-top: 10px;
+        padding: 10px;
+        background: #f8f9fc;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+      }
+      .audit-panel--loading {
+        text-align: center;
+        color: #94a3b8;
+        font-size: 11px;
+      }
+      .audit-panel__header {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 8px;
+      }
+      .audit-panel__filter {
+        flex: 1;
+        padding: 4px 7px;
+        border: 1px solid #d1d5db;
+        border-radius: 5px;
+        font-size: 11px;
+      }
+      .audit-panel__empty {
+        font-size: 11px;
+        color: #94a3b8;
+        text-align: center;
+        padding: 12px;
+      }
+      .audit-panel__list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 320px;
+        overflow-y: auto;
+      }
+      .audit-panel__overflow {
+        font-size: 10px;
+        color: #94a3b8;
+        text-align: center;
+        padding: 6px;
+      }
+      .audit-row {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 5px;
+        padding: 5px 7px;
+        font-size: 11px;
+      }
+      .audit-row--error,
+      .audit-row--cancelled {
+        border-color: #fecaca;
+        background: #fef2f2;
+      }
+      .audit-row__head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .audit-row__time {
+        color: #94a3b8;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10px;
+      }
+      .audit-row__host {
+        font-weight: 500;
+        color: #1a1a2e;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .audit-row__cost {
+        color: #2563eb;
+        font-variant-numeric: tabular-nums;
+      }
+      .audit-row__meta {
+        display: flex;
+        gap: 6px;
+        margin-top: 2px;
+        color: #64748b;
+        font-size: 10px;
+      }
+      .audit-row__model {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .audit-row__endpoint,
+      .audit-row__tokens {
+        color: #94a3b8;
+      }
+      .audit-row__status {
+        color: #dc2626;
+        font-weight: 500;
+      }
     </style>
   </head>
   <body>
