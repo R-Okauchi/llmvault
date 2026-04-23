@@ -40,11 +40,45 @@ function key(t: Target, apiKey: string, model: string): KeyRecord {
   };
 }
 
+// Output budget sized so reasoning models have room to produce actual
+// content (not just consume their budget on internal reasoning). 1024
+// tokens across the full matrix runs costs roughly $0.03-$0.10 per full
+// run at 2026-04 pricing — acceptable for nightly CI signal.
+//
+// Below ~256, OpenAI's gpt-*-pro models can 500 internally on
+// non-streaming requests (their streaming counterpart keeps working),
+// so this bound is also a workaround for an observed provider infra
+// issue.
 const REQUEST: ChatParams = {
   messages: [{ role: "user", content: "Say the single word: pong" }],
-  max_completion_tokens: 32,
-  max_tokens: 32,
+  max_completion_tokens: 1024,
+  max_tokens: 1024,
 };
+
+/**
+ * Retry a fetch on 429 and 5xx up to 3 times with linear backoff.
+ * These statuses indicate provider-side transient issues (rate limits,
+ * infra blips) that are orthogonal to the code under test. Non-retryable
+ * statuses return immediately.
+ */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  maxRetries = 2,
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const r = await fetch(url, init);
+    if (r.ok) return r;
+    if (r.status !== 429 && r.status < 500) return r;
+    if (attempt < maxRetries) {
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    } else {
+      return r;
+    }
+  }
+  // unreachable
+  throw new Error("fetchWithRetry exhausted");
+}
 
 function parseCompletionFor(
   endpoint: "chat" | "responses" | "anthropic",
@@ -66,7 +100,7 @@ async function runStreamToCompletion(params: {
   body: string;
   endpoint: "chat" | "responses" | "anthropic";
 }): Promise<{ deltas: string[]; events: StreamEvent[] }> {
-  const res = await fetch(params.url, {
+  const res = await fetchWithRetry(params.url, {
     method: "POST",
     headers: params.headers,
     body: params.body,
@@ -111,20 +145,20 @@ for (const t of INTEGRATION_TARGETS) {
 
     it(`GET /models returns 2xx`, async () => {
       const p = buildProviderTestFetch(key(t, apiKey, t.chatModels[0]));
-      const r = await fetch(p.url, { method: "GET", headers: p.headers });
+      const r = await fetchWithRetry(p.url, { method: "GET", headers: p.headers });
       expect(r.ok).toBe(true);
     }, 30_000);
 
     for (const model of t.chatModels) {
-      // OpenAI reasoning models (o-series, gpt-5 family incl. -pro) can
-      // consume the entire `max_completion_tokens: 32` budget on internal
-      // reasoning tokens, returning content="" with finish_reason=length.
-      // The request succeeded end-to-end — assert reachability, not content.
+      // OpenAI reasoning models can still produce empty content under
+      // tight budgets if the reasoning tokens consume everything — even
+      // at 1024 tokens, a complex pro reasoning chain can exhaust
+      // output budget. Tolerate that: assert reachability, not content.
       const tolerant = t.id === "openai" && isOpenAIReasoningModel(model);
 
       it(`non-streaming ${model}: succeeds`, async () => {
         const p = buildProviderFetch(key(t, apiKey, model), REQUEST, false);
-        const r = await fetch(p.url, {
+        const r = await fetchWithRetry(p.url, {
           method: "POST",
           headers: p.headers,
           body: p.body,
