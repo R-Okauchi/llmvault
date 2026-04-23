@@ -5,10 +5,14 @@
  * (when any exist) is marked `isActive: true`. Resolution for requests
  * without an explicit keyId or per-origin binding uses the active key.
  *
+ * Phase 13d: the record-level `defaultModel` has been folded into
+ * `policy.modelPolicy.defaultModel`. Records that still carry the legacy
+ * field in storage are migrated on first read and rewritten.
+ *
  * Legacy data:
- *   - v1 `keyquill_providers` → migrate to v3 KeyRecord[], first entry active
- *   - v2 `keyquill_keys` with `isDefault` → migrate to v3, pick first
- *     per-provider default as wallet-wide active, clear the rest
+ *   - v1 `keyquill_providers`  → migrate to v3 KeyRecord[], first entry active
+ *   - v2 `keyquill_keys`       → had `isDefault`, coerced to wallet-wide `isActive`
+ *   - v3 with record `defaultModel` → copied into policy, then stripped
  *
  * Security properties:
  * - Accessible only from extension contexts (not web pages)
@@ -28,6 +32,7 @@ import { DEFAULT_KEY_POLICY, CURRENT_POLICY_VERSION } from "../shared/protocol.j
 import { ext } from "../shared/browser.js";
 import { removeBindingsForKey } from "./bindingStore.js";
 import { clearByKey as clearLedgerForKey } from "./ledger.js";
+import { resolveKeyDefault } from "../shared/keyDefault.js";
 
 const STORAGE_KEY = "keyquill_keys";
 const LEGACY_V1_KEY = "keyquill_providers";
@@ -49,68 +54,55 @@ interface LegacyV1Record {
 }
 
 /**
- * v2 `keyquill_keys` had `isDefault` per-provider; v3 replaces this with
- * a wallet-wide single `isActive`. When we read a v2 record we coerce it
- * here.
+ * Storage rows across v2 and v3-through-Phase-13c carried `defaultModel`
+ * at the record level. This shape captures both: the legacy `isDefault`
+ * flag (pre-v3 wallet-wide active model) and the pre-13d `defaultModel`.
+ * Normalised into `KeyRecord` + populated policy by the read path.
  */
-interface LegacyV2Record {
+interface LegacyStoredRecord {
   keyId: string;
   provider: string;
   label: string;
   apiKey: string;
   baseUrl: string;
-  defaultModel: string;
+  defaultModel?: string;
   isDefault?: boolean;
-  isActive?: boolean;       // present when already v3
+  isActive?: boolean;
+  defaults?: KeyDefaults;
+  policy?: KeyPolicy;
+  policyVersion?: number;
   createdAt: number;
   updatedAt: number;
 }
 
-function coerceV2Records(rows: LegacyV2Record[]): KeyRecord[] {
-  // Already v3 if any row has isActive defined (even false) — trust it.
+/**
+ * v2 → v3 coercion: pick the single wallet-wide active key. Touches
+ * only the `isActive` invariant; the `defaultModel`-to-policy migration
+ * happens afterwards in `ensurePolicy`.
+ */
+function coerceV2Records(rows: LegacyStoredRecord[]): LegacyStoredRecord[] {
   const alreadyV3 = rows.some((r) => typeof r.isActive === "boolean");
   if (alreadyV3) {
-    return rows.map((r) => ({
-      keyId: r.keyId,
-      provider: r.provider,
-      label: r.label,
-      apiKey: r.apiKey,
-      baseUrl: r.baseUrl,
-      defaultModel: r.defaultModel,
-      isActive: Boolean(r.isActive),
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    }));
+    return rows.map((r) => ({ ...r, isActive: Boolean(r.isActive) }));
   }
 
-  // v2 → v3: pick the single wallet-wide active. Prefer the most-recently
-  // updated `isDefault: true` entry; fall back to the first entry.
   const defaults = rows.filter((r) => r.isDefault);
   const winner =
     defaults.length > 0
       ? defaults.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
       : rows[0];
   return rows.map((r) => ({
-    keyId: r.keyId,
-    provider: r.provider,
-    label: r.label,
-    apiKey: r.apiKey,
-    baseUrl: r.baseUrl,
-    defaultModel: r.defaultModel,
+    ...r,
     isActive: winner ? r.keyId === winner.keyId : false,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
   }));
 }
 
 /**
- * Synthesize a KeyPolicy from a record's legacy KeyDefaults.
+ * Synthesize a KeyPolicy from a record's legacy fields.
  *
  * - Sampling (temperature, topP) moves into `policy.sampling`
  * - reasoningEffort becomes an upper cap via `policy.budget.maxReasoningEffort`
  * - `defaultModel` (when provided) seeds `policy.modelPolicy.defaultModel`
- *   so the Policy-driven resolver doesn't need to fall back to the legacy
- *   KeyRecord field.
  * - Every other policy field stays at its permissive default
  *
  * Result is equivalent to pre-v1.0 unrestricted pass-through: nothing
@@ -145,45 +137,63 @@ function synthesizePolicy(
 }
 
 /**
- * Ensure a record has a `policy` field populated with a modelPolicy that
- * reflects the record's `defaultModel`. Two cases:
+ * Normalise a raw stored row (any schema vintage) into the current
+ * `KeyRecord` shape:
  *
- * 1. No policy yet (legacy pre-Phase-3 record) — synthesize from `defaults`
- *    + `defaultModel`.
- * 2. Policy exists but `modelPolicy.defaultModel` is missing (Phase 3–12
- *    record) — backfill from `record.defaultModel`. This is the Phase 13a
- *    migration path; once Phase 13d lands and we drop `KeyRecord.defaultModel`,
- *    this branch becomes a no-op.
+ *   - No `defaultModel` at the top level. The legacy value is copied
+ *     into `policy.modelPolicy.defaultModel` unless the policy already
+ *     pins one (user Policy-editor edits win over record lineage).
+ *   - `policy` always populated. Synthesised from legacy `defaults` if
+ *     none exists.
+ *   - `policyVersion` set to CURRENT_POLICY_VERSION (2 after Phase 13d).
+ *
+ * The `changed` flag lets the caller decide whether to rewrite storage.
  */
-function ensurePolicy(record: KeyRecord): KeyRecord {
-  if (record.policy && typeof record.policyVersion === "number") {
-    if (!record.policy.modelPolicy.defaultModel && record.defaultModel) {
-      return {
-        ...record,
-        policy: {
-          ...record.policy,
-          modelPolicy: {
-            ...record.policy.modelPolicy,
-            defaultModel: record.defaultModel,
-          },
-        },
-      };
-    }
-    return record;
+function normaliseRecord(row: LegacyStoredRecord): {
+  record: KeyRecord;
+  changed: boolean;
+} {
+  const legacyDefault = row.defaultModel;
+  const hadLegacyField = Object.prototype.hasOwnProperty.call(row, "defaultModel");
+  const atCurrentVersion = row.policyVersion === CURRENT_POLICY_VERSION;
+
+  let policy = row.policy;
+  if (!policy) {
+    policy = synthesizePolicy(row.defaults, legacyDefault);
+  } else if (!policy.modelPolicy.defaultModel && legacyDefault) {
+    policy = {
+      ...policy,
+      modelPolicy: {
+        ...policy.modelPolicy,
+        defaultModel: legacyDefault,
+      },
+    };
   }
-  return {
-    ...record,
-    policy: synthesizePolicy(record.defaults, record.defaultModel),
+
+  const record: KeyRecord = {
+    keyId: row.keyId,
+    provider: row.provider,
+    label: row.label,
+    apiKey: row.apiKey,
+    baseUrl: row.baseUrl,
+    ...(typeof row.isActive === "boolean" ? { isActive: row.isActive } : {}),
+    ...(row.defaults ? { defaults: row.defaults } : {}),
+    policy,
     policyVersion: CURRENT_POLICY_VERSION,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
+
+  const changed = hadLegacyField || !atCurrentVersion || row.policy !== policy;
+  return { record, changed };
 }
 
 async function migrateV1IfNeeded(): Promise<KeyRecord[] | null> {
   const legacy = await ext.storage.session.get(LEGACY_V1_KEY);
   const rows = legacy[LEGACY_V1_KEY];
   if (!Array.isArray(rows) || rows.length === 0) return null;
-  const migrated: KeyRecord[] = (rows as LegacyV1Record[]).map((r, i) =>
-    ensurePolicy({
+  const migrated: KeyRecord[] = (rows as LegacyV1Record[]).map((r, i) => {
+    const legacyShape: LegacyStoredRecord = {
       keyId: crypto.randomUUID(),
       provider: r.provider,
       label: r.label ?? r.provider,
@@ -193,8 +203,9 @@ async function migrateV1IfNeeded(): Promise<KeyRecord[] | null> {
       isActive: i === 0, // first legacy entry becomes the wallet active
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
-    }),
-  );
+    };
+    return normaliseRecord(legacyShape).record;
+  });
   await ext.storage.session.set({ [STORAGE_KEY]: migrated });
   await ext.storage.session.remove(LEGACY_V1_KEY);
   return migrated;
@@ -204,22 +215,26 @@ export async function getKeys(): Promise<KeyRecord[]> {
   const data = await ext.storage.session.get(STORAGE_KEY);
   const rows = data[STORAGE_KEY];
   if (Array.isArray(rows)) {
-    // v2 → v3: isActive coercion.
-    const needsCoerce = (rows as LegacyV2Record[]).every(
+    const legacyRows = rows as LegacyStoredRecord[];
+    const needsActiveCoerce = legacyRows.every(
       (r) => typeof r.isActive !== "boolean",
     );
-    const afterV3 = needsCoerce && rows.length > 0
-      ? coerceV2Records(rows as LegacyV2Record[])
-      : (rows as KeyRecord[]);
+    const afterActiveCoerce =
+      needsActiveCoerce && legacyRows.length > 0
+        ? coerceV2Records(legacyRows)
+        : legacyRows;
 
-    // Policy migration: synthesize `policy` from legacy `defaults` on any
-    // record that lacks one. Writes back only if anything changed.
-    const withPolicy = afterV3.map(ensurePolicy);
-    const policyChanged = withPolicy.some((r, i) => r !== afterV3[i]);
-    if (needsCoerce || policyChanged) {
-      await ext.storage.session.set({ [STORAGE_KEY]: withPolicy });
+    let anyChanged = needsActiveCoerce && legacyRows.length > 0;
+    const normalised = afterActiveCoerce.map((row) => {
+      const { record, changed } = normaliseRecord(row);
+      if (changed) anyChanged = true;
+      return record;
+    });
+
+    if (anyChanged) {
+      await ext.storage.session.set({ [STORAGE_KEY]: normalised });
     }
-    return withPolicy;
+    return normalised;
   }
   const migrated = await migrateV1IfNeeded();
   return migrated ?? [];
@@ -227,21 +242,30 @@ export async function getKeys(): Promise<KeyRecord[]> {
 
 export async function getKeySummaries(): Promise<KeySummary[]> {
   const records = await getKeys();
-  return records.map((r) => ({
-    keyId: r.keyId,
-    provider: r.provider,
-    label: r.label,
-    baseUrl: r.baseUrl,
-    defaultModel: r.defaultModel,
-    isActive: Boolean(r.isActive),
-    ...(r.defaults ? { defaults: r.defaults } : {}),
-    ...(r.policy ? { policy: r.policy } : {}),
-    ...(r.policyVersion !== undefined ? { policyVersion: r.policyVersion } : {}),
-    keyHint: maskKey(r.apiKey),
-    status: "active" as const,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-  }));
+  return records.map((r) => {
+    const effective = resolveKeyDefault(r);
+    // Populate both `effectiveDefaultModel` (canonical) and `defaultModel`
+    // (deprecated alias) so SDK consumers from the 1.0.x line keep
+    // reading a populated field while they migrate.
+    const defaultModelFields = effective
+      ? { effectiveDefaultModel: effective.id, defaultModel: effective.id }
+      : {};
+    return {
+      keyId: r.keyId,
+      provider: r.provider,
+      label: r.label,
+      baseUrl: r.baseUrl,
+      ...defaultModelFields,
+      isActive: Boolean(r.isActive),
+      ...(r.defaults ? { defaults: r.defaults } : {}),
+      ...(r.policy ? { policy: r.policy } : {}),
+      ...(r.policyVersion !== undefined ? { policyVersion: r.policyVersion } : {}),
+      keyHint: maskKey(r.apiKey),
+      status: "active" as const,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    };
+  });
 }
 
 export async function getKey(keyId: string): Promise<KeyRecord | null> {
@@ -264,9 +288,13 @@ export interface AddKeyInput {
   label: string;
   apiKey: string;
   baseUrl: string;
-  defaultModel: string;
+  /**
+   * Seeds `policy.modelPolicy.defaultModel` for the new key. Optional
+   * for preset providers (resolver falls back to the preset default);
+   * required by callers for `custom` providers.
+   */
+  defaultModel?: string;
   isActive?: boolean;
-  defaults?: KeyDefaults;
 }
 
 export async function addKey(input: AddKeyInput): Promise<KeyRecord> {
@@ -276,20 +304,18 @@ export async function addKey(input: AddKeyInput): Promise<KeyRecord> {
   const records = await getKeys();
   const now = Date.now();
   const shouldActivate = input.isActive ?? records.length === 0;
-  const newRecord: KeyRecord = ensurePolicy({
+  const newRecord: KeyRecord = {
     keyId: crypto.randomUUID(),
     provider: input.provider,
     label: input.label.trim(),
     apiKey: input.apiKey,
     baseUrl: input.baseUrl,
-    defaultModel: input.defaultModel,
     isActive: shouldActivate,
-    ...(input.defaults && Object.keys(input.defaults).length > 0
-      ? { defaults: input.defaults }
-      : {}),
+    policy: synthesizePolicy(undefined, input.defaultModel),
+    policyVersion: CURRENT_POLICY_VERSION,
     createdAt: now,
     updatedAt: now,
-  });
+  };
   let next = [...records, newRecord];
   if (shouldActivate) {
     next = next.map((r) =>
@@ -304,9 +330,7 @@ export interface UpdateKeyInput {
   keyId: string;
   label?: string;
   baseUrl?: string;
-  defaultModel?: string;
   apiKey?: string;
-  defaults?: KeyDefaults;
 }
 
 export async function updateKey(input: UpdateKeyInput): Promise<KeyRecord | null> {
@@ -314,72 +338,13 @@ export async function updateKey(input: UpdateKeyInput): Promise<KeyRecord | null
   const idx = records.findIndex((r) => r.keyId === input.keyId);
   if (idx < 0) return null;
   const existing = records[idx];
-  // Merge defaults shallow: passed keys override, others preserved. To clear
-  // a default, pass `defaults: {}` — fields present with `undefined` are
-  // dropped.
-  let mergedDefaults: KeyDefaults | undefined = existing.defaults;
-  if (input.defaults) {
-    const merged = { ...(existing.defaults ?? {}), ...input.defaults };
-    // Strip undefined keys so callers can explicitly clear a field.
-    const cleaned: KeyDefaults = {};
-    if (merged.temperature !== undefined) cleaned.temperature = merged.temperature;
-    if (merged.topP !== undefined) cleaned.topP = merged.topP;
-    if (merged.reasoningEffort !== undefined) cleaned.reasoningEffort = merged.reasoningEffort;
-    mergedDefaults = Object.keys(cleaned).length > 0 ? cleaned : undefined;
-  }
   const updated: KeyRecord = {
     ...existing,
     label: input.label?.trim() ?? existing.label,
     baseUrl: input.baseUrl ?? existing.baseUrl,
-    defaultModel: input.defaultModel ?? existing.defaultModel,
     apiKey: input.apiKey ?? existing.apiKey,
-    ...(mergedDefaults ? { defaults: mergedDefaults } : {}),
     updatedAt: Date.now(),
   };
-  // Strip `defaults` entirely when cleared.
-  if (!mergedDefaults) {
-    delete (updated as { defaults?: KeyDefaults }).defaults;
-  }
-  // Sync derived policy fields (sampling + reasoning effort cap) whenever
-  // defaults change. Other policy fields (budget caps, privacy) are
-  // user-owned and preserved — users edit those directly through the
-  // popup Policy tab, not via defaults.
-  if (input.defaults !== undefined) {
-    const resynthesized = synthesizePolicy(mergedDefaults);
-    updated.policy = {
-      ...(existing.policy ?? DEFAULT_KEY_POLICY),
-      sampling: resynthesized.sampling,
-      budget: {
-        ...(existing.policy?.budget ?? DEFAULT_KEY_POLICY.budget),
-        ...(resynthesized.budget.maxReasoningEffort !== undefined
-          ? { maxReasoningEffort: resynthesized.budget.maxReasoningEffort }
-          : { maxReasoningEffort: undefined }),
-      },
-    };
-    // Strip undefined sampling so shape stays minimal.
-    if (!updated.policy.sampling) delete (updated.policy as { sampling?: SamplingPolicy }).sampling;
-    if (updated.policy.budget.maxReasoningEffort === undefined) {
-      delete (updated.policy.budget as { maxReasoningEffort?: ReasoningEffort }).maxReasoningEffort;
-    }
-    updated.policyVersion = CURRENT_POLICY_VERSION;
-  }
-  // Mirror a defaultModel change into `policy.modelPolicy.defaultModel` so
-  // the resolver's Tier-1 (key-default) path picks it up without falling
-  // back to the legacy field. A user who pins a different model via the
-  // Policy editor will have already saved through updatePolicy — they win
-  // on the next updateKey call only if the caller explicitly passes a new
-  // defaultModel here.
-  if (input.defaultModel !== undefined && input.defaultModel !== existing.defaultModel) {
-    const basePolicy = updated.policy ?? existing.policy ?? DEFAULT_KEY_POLICY;
-    updated.policy = {
-      ...basePolicy,
-      modelPolicy: {
-        ...basePolicy.modelPolicy,
-        defaultModel: input.defaultModel,
-      },
-    };
-    updated.policyVersion = CURRENT_POLICY_VERSION;
-  }
   if (updated.label.length === 0) {
     throw new Error("label cannot be empty");
   }
@@ -392,16 +357,25 @@ export async function updateKey(input: UpdateKeyInput): Promise<KeyRecord | null
 /**
  * Replace a key's full KeyPolicy. Called from the popup Policy editor.
  * Bumps policyVersion to the current schema on save so stale shapes are
- * upgraded transparently.
+ * upgraded transparently. Also strips sampling / reasoningEffort scraps
+ * that were produced by older `synthesizePolicy` paths so the policy
+ * shape stays minimal.
  */
 export async function updatePolicy(keyId: string, policy: KeyPolicy): Promise<KeyRecord | null> {
   const records = await getKeys();
   const idx = records.findIndex((r) => r.keyId === keyId);
   if (idx < 0) return null;
   const existing = records[idx];
+  const cleanPolicy: KeyPolicy = { ...policy };
+  if (cleanPolicy.sampling && Object.keys(cleanPolicy.sampling).length === 0) {
+    delete (cleanPolicy as { sampling?: SamplingPolicy }).sampling;
+  }
+  if (cleanPolicy.budget && cleanPolicy.budget.maxReasoningEffort === undefined) {
+    delete (cleanPolicy.budget as { maxReasoningEffort?: ReasoningEffort }).maxReasoningEffort;
+  }
   const updated: KeyRecord = {
     ...existing,
-    policy,
+    policy: cleanPolicy,
     policyVersion: CURRENT_POLICY_VERSION,
     updatedAt: Date.now(),
   };
