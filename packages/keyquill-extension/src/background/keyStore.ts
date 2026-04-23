@@ -27,6 +27,7 @@ import type {
 import { DEFAULT_KEY_POLICY, CURRENT_POLICY_VERSION } from "../shared/protocol.js";
 import { ext } from "../shared/browser.js";
 import { removeBindingsForKey } from "./bindingStore.js";
+import { clearByKey as clearLedgerForKey } from "./ledger.js";
 
 const STORAGE_KEY = "keyquill_keys";
 const LEGACY_V1_KEY = "keyquill_providers";
@@ -354,6 +355,9 @@ export async function deleteKey(keyId: string): Promise<void> {
   // Cascade: drop per-origin bindings referencing the deleted key so the
   // next access re-prompts consent.
   await removeBindingsForKey(keyId);
+  // Cascade: drop ledger entries so spend/audit history doesn't outlive
+  // the key. Ledger keeps no cross-key state so this is sufficient.
+  await clearLedgerForKey(keyId);
 }
 
 /**
