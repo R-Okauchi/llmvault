@@ -89,6 +89,15 @@ export interface ResolverInput {
    * rebuild the body in the Responses shape using the same model.
    */
   forceEndpoint?: "chat" | "responses";
+  /**
+   * Per-request bypasses granted by the user through the consent popup.
+   * streamManager sets these after the user clicks "Allow once" so the
+   * retry can skip the policy gate that originally triggered consent.
+   */
+  consentGranted?: {
+    modelGate?: boolean;
+    costGate?: boolean;
+  };
 }
 
 export interface ExecutionPlan {
@@ -327,6 +336,7 @@ interface ModelSelection {
 function selectModel(input: ResolverInput): ResolverOutput | ModelSelection {
   const { request, key } = input;
   const policy = key.policy;
+  const bypassModel = input.consentGranted?.modelGate === true;
   const requires = request.requires ?? [];
 
   // Derive implicit capability requirements from the request shape.
@@ -351,8 +361,10 @@ function selectModel(input: ResolverInput): ResolverOutput | ModelSelection {
         message: `Model "${request.prefer.model}" is not in the catalog.`,
       };
     }
-    const gate = gateModel(explicit, policy);
-    if (gate) return gate;
+    if (!bypassModel) {
+      const gate = gateModel(explicit, policy);
+      if (gate) return gate;
+    }
     return { model: explicit, reason: "explicit" };
   }
 
@@ -360,8 +372,8 @@ function selectModel(input: ResolverInput): ResolverOutput | ModelSelection {
   if (implicitCaps.length > 0) {
     const providerFilter = request.prefer?.provider ? [request.prefer.provider] : undefined;
     const matches = findByCapabilities(implicitCaps, providerFilter).filter((m) => {
-      // Also honor policy filters here.
-      return !gateModel(m, policy);
+      // Honor policy filters unless the user has granted a consent bypass.
+      return bypassModel ? true : !gateModel(m, policy);
     });
     if (matches.length === 0) {
       return {
@@ -391,8 +403,10 @@ function selectModel(input: ResolverInput): ResolverOutput | ModelSelection {
       message: `Key's defaultModel "${key.defaultModel}" is not in the catalog.`,
     };
   }
-  const gate = gateModel(def, policy);
-  if (gate) return gate;
+  if (!bypassModel) {
+    const gate = gateModel(def, policy);
+    if (gate) return gate;
+  }
   return { model: def, reason: "default" };
 }
 
@@ -805,8 +819,10 @@ export async function resolveRequest(input: ResolverInput): Promise<ResolverOutp
     tokenClamp.effective,
     reasoningClamp.effective ? Math.floor(tokenClamp.effective / 2) : 0,
   );
-  const budget = budgetCheck(model, estimatedCost, policy, input.origin, input.key.keyId);
-  if (budget) return budget;
+  if (!input.consentGranted?.costGate) {
+    const budget = budgetCheck(model, estimatedCost, policy, input.origin, input.key.keyId);
+    if (budget) return budget;
+  }
 
   // Stage 8: body
   const built = buildBody(

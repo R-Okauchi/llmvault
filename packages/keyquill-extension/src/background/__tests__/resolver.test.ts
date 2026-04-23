@@ -616,6 +616,43 @@ describe("resolveRequest (end to end)", () => {
     expect(body.stream).toBe(true);
   });
 
+  it("consentGranted.modelGate bypasses allowlist on Tier-3 prefer.model", async () => {
+    const input: ResolverInput = {
+      ...BASE_INPUT,
+      request: { messages: [{ role: "user", content: "hi" }], prefer: { model: "gpt-5.4-pro" } },
+      key: mkKey({
+        policy: mkPolicy({
+          modelPolicy: {
+            mode: "allowlist",
+            allowedModels: ["gpt-5.4-mini"],
+            onViolation: "confirm",
+          },
+        }),
+      }),
+      consentGranted: { modelGate: true },
+    };
+    const out = await resolveRequest(input);
+    expect(out.kind).toBe("ready");
+    if (out.kind === "ready") {
+      expect(out.plan.model.id).toBe("gpt-5.4-pro");
+    }
+  });
+
+  it("consentGranted.costGate bypasses per-request budget cap", async () => {
+    const input: ResolverInput = {
+      ...BASE_INPUT,
+      request: { messages: [{ role: "user", content: "x".repeat(400) }] },
+      key: mkKey({
+        policy: mkPolicy({
+          budget: { maxCostPerRequestUSD: 0.0001, onBudgetHit: "confirm" },
+        }),
+      }),
+      consentGranted: { costGate: true },
+    };
+    const out = await resolveRequest(input);
+    expect(out.kind).toBe("ready");
+  });
+
   it("tools implicitly add tool_use requirement and select compatible model", async () => {
     const input: ResolverInput = {
       ...BASE_INPUT,

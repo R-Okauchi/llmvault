@@ -303,6 +303,22 @@ export type IncomingRequest =
   | { type: "setBinding"; origin: string; keyId: string }
   | { type: "revokeBinding"; origin: string }
   | { type: "_consentResponse"; origin: string; approved: boolean; keyId?: string }
+  // Per-request consent (v1.0 broker). Sent from the consent popup in
+  // "request-approval" mode so the background can match it up with the
+  // pending resolver retry.
+  | {
+      type: "_requestConsentResponse";
+      origin: string;
+      keyId: string;
+      model: string;
+      reason:
+        | "model-outside-allowlist"
+        | "model-in-denylist"
+        | "high-cost"
+        | "capability-missing";
+      approved: boolean;
+      scope?: "once" | "always";
+    }
   // Popup-only: policy editor + audit log
   | { type: "updatePolicy"; keyId: string; policy: KeyPolicy }
   | { type: "getLedger"; keyId: string; since?: number }
