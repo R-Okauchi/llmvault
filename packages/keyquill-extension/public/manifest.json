@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Keyquill",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Securely store LLM API keys in your browser. Use your own keys from any web app without trusting their server.",
   "author": "R-Okauchi",
   "homepage_url": "https://github.com/R-Okauchi/keyquill",

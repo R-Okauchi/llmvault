@@ -2,6 +2,21 @@
 
 **Bring Your Own Key on mobile — a Capacitor plugin that keeps LLM API keys in iOS Keychain / Android Keystore and calls providers directly from native code.**
 
+> ## Note: parallel track with `keyquill-extension@1.0+`
+>
+> `keyquill-extension` has moved to a v1.0 **policy broker** architecture
+> (model catalogue with capability tags, `KeyPolicy` with allowlist /
+> denylist / budgets in USD, resolver pipeline, audit ledger, capability-
+> first SDK). `keyquill-mobile` pre-dates that work and currently ships
+> its own, earlier `RelayPolicy` surface (provider-hostname allowlist,
+> budgets in microunits, biometric gating) — a **different policy model**
+> with different wire shape (`chatStream({ provider, messages, systemPrompt, maxTokens })`).
+>
+> Unifying mobile onto the broker is tracked as a future arc; it is
+> **explicitly out of scope** for the v1.0 extension release. Today,
+> mobile is a fully-functional product on its own but is not a broker
+> peer.
+
 ```
 ┌──────────────────────────────────────────────┐
 │                 Your App                      │

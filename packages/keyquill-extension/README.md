@@ -1,8 +1,32 @@
 # keyquill-extension
 
-**Keyquill browser extension — Chrome / Firefox (Manifest V3).**
+**Keyquill browser extension — Chrome / Firefox (Manifest V3). v1.0: BYOK policy broker.**
 
-A BYOK (Bring Your Own Key) wallet for web applications. Stores LLM API keys in `chrome.storage.session` and makes CORS-free calls to provider APIs from the extension service worker.
+A BYOK (Bring Your Own Key) wallet for web applications. Stores LLM API keys in `chrome.storage.session`, brokers every request through a user-owned policy, and records a per-key audit ledger. Developers declare what they need; users enforce what's allowed.
+
+## What's new in v1.0
+
+1.0 turns keyquill from a "pass-through wallet" into an **LLM access broker**:
+
+- **Model catalogue** — structured metadata for every supported model (capabilities, pricing, endpoint routing, constraints). Replaces ad-hoc regex heuristics.
+- **KeyPolicy** — per-key rules enforced by the broker. Modes: `open` / `allowlist` / `denylist` / `capability-only`. Budgets in USD (per-request / daily / monthly). Privacy (HTTPS required, provider allowlist, origin regex). Sampling defaults. Runtime behaviour (auto-fallback, retries, timeout).
+- **Resolver** — 8-stage pipeline: privacy → model selection → capability check → budget → tokens → reasoning → sampling → body construction. Returns a concrete ExecutionPlan or a consent-required / reject outcome with a ResolverTrace the user can audit.
+- **Audit ledger** — every request written to `chrome.storage.local` with timestamp, origin, model, token usage, cost estimate + actual. 90-day retention, CSV export, cascade-clear on key delete.
+- **Consent UX** — per-request approval popup (once / always / reject) when the resolver flags a policy violation. 5-minute in-memory cache suppresses repeat popups.
+- **Localised errors** — en / ja tables, auto-detect via `chrome.i18n.getUILanguage()`. All policy codes get user-actionable sentences.
+- **SDK v2** — capability-first API in `keyquill@2` (see the [SDK README](../keyquill/README.md)). v1 SDK clients (`@0.3.x`) continue to work against the same extension via an in-extension wire translator.
+
+Popup additions per key card:
+- **Spend bar** (monthly total + budget progress)
+- **Policy** button — 5 tabs: Model / Budget / Privacy / Sampling / Behavior
+- **Audit** button — filterable ledger + CSV export
+
+## Migration from 0.3.x
+
+Existing keys are migrated automatically on first read:
+- Legacy `defaults: { temperature, topP, reasoningEffort }` → `policy.sampling` + `policy.budget.maxReasoningEffort`
+- A permissive `DEFAULT_KEY_POLICY` (mode `open`, warn-only budget) is synthesised so behaviour matches pre-1.0.
+- `policyVersion: 1` is written on first migrated read. No manual action required.
 
 ## How it works
 
@@ -45,7 +69,7 @@ pnpm add keyquill
 ```
 
 ```typescript
-import { Keyquill } from "keyquill";
+import { Keyquill } from "keyquill"; // v2 capability-first API
 
 const vault = new Keyquill();
 
@@ -54,14 +78,17 @@ if (await vault.isAvailable()) {
     await vault.connect();  // opens consent popup
   }
 
-  const result = await vault.chat({
-    model: "gpt-4o",
+  // Tier 2 — capability-declared (recommended)
+  const { completion } = await vault.chat({
     messages: [{ role: "user", content: "Hello" }],
+    requires: ["tool_use"],
+    tone: "precise",
+    maxOutput: 1024,
   });
 }
 ```
 
-See the [`keyquill` SDK README](../keyquill/README.md) for the full API.
+See the [`keyquill` SDK README](../keyquill/README.md) for the full API + the three ergonomic tiers (zero-config / capability-declared / full control).
 
 ## Supported providers
 

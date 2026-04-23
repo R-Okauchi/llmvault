@@ -1,6 +1,6 @@
 {
   "name": "keyquill-extension",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Keyquill browser extension — Manifest V3 BYOK wallet for Chrome and Firefox. Distributed via Chrome Web Store and Firefox AMO; not published to npm.",
   "type": "module",

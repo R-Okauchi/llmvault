@@ -2,6 +2,17 @@
 
 **Zero-knowledge E2E-encrypted WebSocket relay for pairing a PC browser with a mobile LLM wallet.**
 
+> ## Note: payload shape tracks `keyquill-mobile`, not the extension broker
+>
+> `RelayInnerRequest` currently carries `{ provider, messages, systemPrompt, maxTokens }` — the
+> same wire shape the [`keyquill-mobile`](../keyquill-mobile) plugin
+> accepts, **not** the capability-first v2 shape used by `keyquill@2` and
+> `keyquill-extension@1.0+`. That's intentional for now: relay is a pure
+> transport whose payload is defined by the mobile endpoint it talks to.
+> When mobile migrates to the broker architecture (see the note in the
+> mobile README), this relay's `RelayInnerRequest` and `RelayInnerResponse`
+> will follow. Until then, relay operates as-is.
+
 When the mobile app holds the LLM API keys (via [`keyquill-mobile`](../keyquill-mobile)) and the user wants to use those keys from a PC browser, `keyquill-relay` provides a secure bridge:
 
 ```

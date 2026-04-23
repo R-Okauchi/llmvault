@@ -44,7 +44,9 @@ Your Web App                    Keyquill Extension                  LLM Provider
 npm install keyquill
 ```
 
-### 2. Use in your app
+### 2. Use in your app (v2 capability-first API)
+
+`keyquill@2` uses a **capability-first** API — the app declares what it needs, the user's policy picks the actual model. Three ergonomic tiers:
 
 ```typescript
 import { Keyquill } from "keyquill";
@@ -52,34 +54,36 @@ import { Keyquill } from "keyquill";
 const vault = new Keyquill();
 
 if (await vault.isAvailable()) {
-  // Request permission (opens a consent popup the first time)
-  // Subsequent calls return instantly if already connected.
   if (!(await vault.isConnected())) {
     try {
-      await vault.connect(); // user approves in popup
+      await vault.connect();
     } catch (err) {
       // USER_DENIED / TIMEOUT — handle gracefully
       return;
     }
   }
 
-  // Non-streaming chat
-  const result = await vault.chat({
-    model: "gpt-4o",
+  // ── Tier 1: zero-config ──────────────────────────────
+  // Uses the key's default model. Simplest possible chat.
+  const { completion } = await vault.chat({
     messages: [{ role: "user", content: "Hello!" }],
   });
-  console.log(result.content);
+  console.log(completion.content);
 
-  // Streaming chat
+  // ── Tier 2: capability-declared (recommended) ────────
+  // The broker picks the best model in the user's allowlist that
+  // satisfies every capability. `tone` abstracts over temperature.
   for await (const event of vault.chatStream({
-    messages: [{ role: "user", content: "Hello!" }],
+    messages: [{ role: "user", content: "Debug this code..." }],
+    requires: ["reasoning", "long_context"],
+    tone: "precise",
+    maxOutput: 2048,
   })) {
     if (event.type === "delta") process.stdout.write(event.text);
   }
 
-  // Tool calling
-  const result2 = await vault.chat({
-    model: "gpt-4o",
+  // Tool calling — `tool_use` is implied by passing `tools`.
+  const { completion: res } = await vault.chat({
     messages: [{ role: "user", content: "What's the weather in Tokyo?" }],
     tools: [
       {
@@ -96,13 +100,23 @@ if (await vault.isAvailable()) {
       },
     ],
   });
-  if (result2.tool_calls) {
-    console.log(result2.tool_calls[0].function.name); // "get_weather"
+  if (res.tool_calls) {
+    console.log(res.tool_calls[0].function.name); // "get_weather"
   }
 
-  // Vision (multimodal)
+  // ── Tier 3: full control ─────────────────────────────
+  // Pin the exact model + parameters.
+  const { completion: pro } = await vault.chat({
+    messages: [{ role: "user", content: "Prove the central limit theorem." }],
+    prefer: {
+      model: "gpt-5.4-pro",
+      reasoningEffort: "high",
+      temperature: 1, // reasoning models require 1
+    },
+  });
+
+  // Vision (multimodal) — `vision` is implied by an image ContentPart.
   for await (const event of vault.chatStream({
-    model: "gpt-4o",
     messages: [
       {
         role: "user",
@@ -112,6 +126,7 @@ if (await vault.isAvailable()) {
         ],
       },
     ],
+    requires: ["vision"],
   })) {
     if (event.type === "delta") process.stdout.write(event.text);
   }
@@ -184,29 +199,17 @@ Requires an active connection (call `connect()` first).
 
 Test connectivity to a provider.
 
-### `vault.chat(params): Promise<ChatCompletion>`
+### `vault.chat(params): Promise<{ completion; keyId }>`
 
-Non-streaming chat completion. Returns the full response.
-
-```typescript
-const result = await vault.chat({
-  provider: "openai",       // optional — defaults to first registered
-  model: "gpt-4o",          // optional — overrides provider default
-  messages: [{ role: "user", content: "Hello" }],
-  tools: [...],             // optional — function calling
-  temperature: 0.7,         // optional
-  response_format: { type: "json_object" }, // optional — structured output
-});
-
-// result: { content, tool_calls?, finish_reason, usage? }
-```
+Non-streaming chat completion. Returns the full response plus the `keyId` that serviced it.
 
 ### `vault.chatStream(params): AsyncGenerator<StreamEvent>`
 
-Stream a chat completion. Returns an `AsyncGenerator` that yields events:
+Stream a chat completion. First event is always `{ type: "start", keyId, provider, label }` so callers can tell which key serviced the request.
 
 ```typescript
 type StreamEvent =
+  | { type: "start"; keyId: string; provider: string; label: string }
   | { type: "delta"; text: string }
   | { type: "tool_call_delta"; tool_calls: ToolCallDelta[] }
   | {
@@ -221,18 +224,50 @@ type StreamEvent =
 
 ```typescript
 interface ChatParams {
-  provider?: string; // Provider ID or "auto"
-  model?: string; // Model override
-  messages: ChatMessage[]; // Conversation (supports text, vision, tool results)
-  max_tokens?: number;
-  temperature?: number;
-  top_p?: number;
-  stop?: string | string[];
-  tools?: Tool[]; // Function calling
-  tool_choice?: ToolChoice; // "none" | "auto" | "required" | specific function
-  response_format?: ResponseFormat; // "text" | "json_object" | "json_schema"
+  messages: ChatMessage[];     // conversation (text / vision / tool results)
+  tools?: Tool[];              // function calling
+  toolChoice?: ToolChoice;     // "none" | "auto" | "required" | specific
+  responseFormat?: ResponseFormat; // "text" | "json_object" | "json_schema"
+
+  // v2 capability-first fields
+  requires?: Capability[];     // capabilities the broker must satisfy
+  tone?: "precise" | "balanced" | "creative";
+  maxOutput?: number;          // max output tokens (clamped by policy)
+  prefer?: {
+    model?: string;            // Tier 3 explicit model pin
+    provider?: string;         // narrow to a specific provider
+    temperature?: number;
+    topP?: number;
+    reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  };
+
+  keyId?: string;              // explicit key selection
 }
+
+type Capability =
+  | "tool_use" | "structured_output" | "vision" | "audio"
+  | "reasoning" | "long_context" | "streaming" | "cache"
+  | "fast" | "cheap" | "multilingual" | "code";
 ```
+
+## Migrating from keyquill@1 → keyquill@2
+
+v1 (`keyquill@0.3.x`) remains available on npm — pin it if you're not ready to migrate. v2 deletes v1 top-level fields in favour of the capability-first surface:
+
+| v1 (`@0.3.x`) | v2 (`@2`) |
+| --- | --- |
+| `model: "gpt-4o"` | `prefer: { model: "gpt-4o" }` |
+| `temperature: 0.7` | `prefer: { temperature: 0.7 }` &nbsp;— or&nbsp; `tone: "balanced"` |
+| `top_p: 0.9` | `prefer: { topP: 0.9 }` |
+| `max_tokens: 2048` | `maxOutput: 2048` |
+| `max_completion_tokens: 2048` | `maxOutput: 2048` |
+| `reasoning_effort: "high"` | `prefer: { reasoningEffort: "high" }` |
+| `tool_choice: "required"` | `toolChoice: "required"` |
+| `response_format: { type: "json_object" }` | `responseFormat: { type: "json_object" }` |
+| `provider: "openai"` | `prefer: { provider: "openai" }` |
+| `stop: [...]` | (removed — not commonly used, re-request if needed) |
+
+The extension (`keyquill-extension@1.0+`) accepts **both wire shapes simultaneously** via an internal translator. So you can migrate one app at a time, on your own schedule — existing v1 apps keep running unchanged against the same installed extension.
 
 ## Supported Providers
 
