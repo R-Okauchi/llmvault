@@ -38,6 +38,8 @@ import {
 import type { ResolverInput, ResolverRequest, ExecutionPlan } from "./resolver.js";
 import { resolveRequest } from "./resolver.js";
 import { appendEntry } from "./ledger.js";
+import { requestRequestConsent, type RequestConsentContext } from "./consent.js";
+import { hasValidApproval, recordApproval } from "./consentCache.js";
 
 // ── Key resolution ─────────────────────────────────────
 
@@ -452,17 +454,17 @@ async function runResolver(
   key: KeyRecord,
   stream: boolean,
   forceEndpoint?: "chat" | "responses",
+  consentGranted?: { modelGate?: boolean; costGate?: boolean },
 ): Promise<ResolverResolved> {
   const resolverInput: ResolverInput = {
     request: toResolverRequest(request, stream),
     origin,
     key,
     ...(forceEndpoint ? { forceEndpoint } : {}),
+    ...(consentGranted ? { consentGranted } : {}),
   };
   const result = await resolveRequest(resolverInput);
-  if (result.kind === "ready") {
-    return { kind: true, plan: result.plan };
-  }
+  if (result.kind === "ready") return { kind: true, plan: result.plan };
   if (result.kind === "reject") {
     return {
       kind: false,
@@ -474,17 +476,75 @@ async function runResolver(
       },
     };
   }
-  // consent-required: Phase 8 wires the popup flow. For now, reject with
-  // a clear error so callers know to surface the policy decision.
-  return {
-    kind: false,
-    reason: "consent-required",
-    error: {
-      type: "error",
-      code: `POLICY_${result.reason.toUpperCase().replace(/-/g, "_")}_CONSENT_REQUIRED`,
-      message: `This request needs user confirmation (${result.reason}). Consent popup will be wired in Phase 8.`,
-    },
+
+  // consent-required: ask the user via popup, then retry with the
+  // matching bypass. If the user clicked "always" in the popup, the
+  // key's policy was already updated by consent.ts — a naked retry
+  // (no bypass) will pass the gate.
+  const context: RequestConsentContext = {
+    origin: result.context.origin || origin,
+    keyId: result.context.keyId || key.keyId,
+    model: result.context.model ?? "",
+    reason: mapReason(result.reason),
+    ...(result.context.estimatedCostUSD !== undefined
+      ? { estimatedCostUSD: result.context.estimatedCostUSD }
+      : {}),
+    ...(result.context.capability ? { capability: result.context.capability } : {}),
   };
+
+  // Cache fast-path: identical request was just approved "once".
+  if (hasValidApproval(context)) {
+    return runResolver(request, origin, key, stream, forceEndpoint, bypassFor(result.reason));
+  }
+
+  const decision = await requestRequestConsent(context);
+  if (!decision.approved) {
+    return {
+      kind: false,
+      reason: "reject",
+      error: {
+        type: "error",
+        code: `POLICY_${result.reason.toUpperCase().replace(/-/g, "_")}_REJECTED`,
+        message: `User rejected the request (${result.reason}).`,
+      },
+    };
+  }
+
+  if (decision.scope === "once") {
+    recordApproval(context);
+  } else {
+    // "always" updates the key's policy. Reload the key so the retry
+    // sees the new allowlist/denylist. Bypass is still set in case the
+    // updated policy needs another consent round (e.g., separate
+    // violations on the same request); the resolver skips only the gate
+    // that the user just approved.
+    const reloaded = (await (await import("./keyStore.js")).getKey(key.keyId)) ?? key;
+    key = reloaded;
+  }
+
+  return runResolver(request, origin, key, stream, forceEndpoint, bypassFor(result.reason));
+}
+
+function mapReason(
+  r: "model-outside-allowlist" | "model-in-denylist" | "high-cost" | "capability-missing",
+): RequestConsentContext["reason"] {
+  return r;
+}
+
+function bypassFor(
+  r: "model-outside-allowlist" | "model-in-denylist" | "high-cost" | "capability-missing",
+): { modelGate?: boolean; costGate?: boolean } {
+  switch (r) {
+    case "model-outside-allowlist":
+    case "model-in-denylist":
+      return { modelGate: true };
+    case "high-cost":
+      return { costGate: true };
+    case "capability-missing":
+      // Capability gaps can't be bypassed — the model genuinely lacks
+      // the capability. Consent for this reason is informational.
+      return {};
+  }
 }
 
 function nonReadyToResponse(r: ResolverResolved): OutgoingResponse {

@@ -49,6 +49,23 @@ vi.mock("../ledger.js", () => ({
   exportCSV: vi.fn(async () => ""),
 }));
 
+// Consent depends on ext.storage.local (bindings) + windows.create — stub
+// it away. The 404 scenario doesn't hit policy gates so consent is never
+// invoked in-flight, but the module is evaluated at import time.
+vi.mock("../consent.js", () => ({
+  requestRequestConsent: vi.fn(async () => ({ approved: false })),
+  requestConsent: vi.fn(async () => ({ approved: false })),
+  handleConsentResponse: vi.fn(async () => {}),
+  handleRequestConsentResponse: vi.fn(async () => {}),
+  handleWindowClosed: vi.fn(() => {}),
+}));
+
+vi.mock("../consentCache.js", () => ({
+  hasValidApproval: vi.fn(() => false),
+  recordApproval: vi.fn(() => {}),
+  clearCache: vi.fn(() => {}),
+}));
+
 type Handler = (req: {
   url: string;
   method: string;

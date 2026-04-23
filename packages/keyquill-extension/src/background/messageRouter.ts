@@ -35,7 +35,11 @@ import {
   setBinding,
   removeBinding,
 } from "./bindingStore.js";
-import { requestConsent, handleConsentResponse } from "./consent.js";
+import {
+  requestConsent,
+  handleConsentResponse,
+  handleRequestConsentResponse,
+} from "./consent.js";
 import { handleChatStream, handleChat } from "./streamManager.js";
 import { buildProviderTestFetch, sanitizeErrorText } from "./providerFetch.js";
 import { ext } from "../shared/browser.js";
@@ -143,6 +147,24 @@ export async function handleMessage(
         };
       }
       await handleConsentResponse(request.origin, request.approved, request.keyId);
+      return { type: "ok" };
+    }
+
+    case "_requestConsentResponse": {
+      if (!isInternal(sender)) {
+        return { type: "error", code: "BLOCKED", message: "Internal message type" };
+      }
+      await handleRequestConsentResponse(
+        {
+          origin: request.origin,
+          keyId: request.keyId,
+          model: request.model,
+          reason: request.reason,
+        },
+        request.approved
+          ? { approved: true, scope: request.scope ?? "once" }
+          : { approved: false },
+      );
       return { type: "ok" };
     }
 
