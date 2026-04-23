@@ -13,14 +13,16 @@ import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
 import type { KeyRecord } from "../../shared/protocol.js";
 
-// Stub key/binding stores before streamManager imports them.
+// Use a catalogued chat-endpoint model as the base. Test #1 simulates
+// OpenAI deprecating it to pro-only (server returns fallback 404); the
+// retry must rebuild the body against /responses.
 const testKey: KeyRecord = {
   keyId: "k-test",
   provider: "openai",
   label: "test",
   apiKey: "sk-test",
   baseUrl: "", // set after server boots
-  defaultModel: "gpt-99-future-pro",
+  defaultModel: "gpt-5.4-mini",
   createdAt: 0,
   updatedAt: 0,
 };
@@ -33,6 +35,18 @@ vi.mock("../keyStore.js", () => ({
 vi.mock("../bindingStore.js", () => ({
   getBinding: vi.fn(async () => null),
   touchBindingUsage: vi.fn(async () => {}),
+}));
+
+// Ledger uses chrome.storage.local + navigator.locks; stub the module
+// entirely so the 404-fallback test stays focused on endpoint routing.
+vi.mock("../ledger.js", () => ({
+  appendEntry: vi.fn(async () => {}),
+  queryByKey: vi.fn(async () => []),
+  getMonthSpend: vi.fn(async () => 0),
+  getDailySpend: vi.fn(async () => 0),
+  clearByKey: vi.fn(async () => {}),
+  getOriginSummary: vi.fn(async () => []),
+  exportCSV: vi.fn(async () => ""),
 }));
 
 type Handler = (req: {

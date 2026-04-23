@@ -13,7 +13,6 @@
 import { describe, it, expect } from "vitest";
 import type { ChatParams, ChatCompletion, KeyRecord, StreamEvent } from "../../shared/protocol.js";
 import {
-  buildProviderFetch,
   buildProviderTestFetch,
   isOpenAIReasoningModel,
   parseAnthropicCompletion,
@@ -25,6 +24,7 @@ import {
   parseOpenAiResponsesStreamEvent,
   parseOpenAiStreamEvent,
 } from "../streamParsers.js";
+import { resolveRequest, type ResolverRequest } from "../resolver.js";
 import { INTEGRATION_TARGETS, type Target } from "./integrationTargets.js";
 
 function key(t: Target, apiKey: string, model: string): KeyRecord {
@@ -40,6 +40,29 @@ function key(t: Target, apiKey: string, model: string): KeyRecord {
   };
 }
 
+/**
+ * Exercise the production code path end-to-end: resolver builds the
+ * plan from the test's v2 shape, caller issues the HTTP request. Mirrors
+ * what streamManager does in handleChat / handleChatStream.
+ */
+async function buildPlan(k: KeyRecord, model: string, stream: boolean) {
+  const req: ResolverRequest = {
+    messages: [{ role: "user", content: "Say the single word: pong" }],
+    maxOutput: REQUEST_MAX_OUTPUT,
+    stream,
+    prefer: { model },
+  };
+  const result = await resolveRequest({
+    request: req,
+    origin: "https://integration-test",
+    key: k,
+  });
+  if (result.kind !== "ready") {
+    throw new Error(`resolver ${result.kind}: ${"message" in result ? result.message : result.reason}`);
+  }
+  return result.plan;
+}
+
 // Output budget sized so reasoning models have room to produce actual
 // content (not just consume their budget on internal reasoning). 1024
 // tokens across the full matrix runs costs roughly $0.03-$0.10 per full
@@ -49,11 +72,9 @@ function key(t: Target, apiKey: string, model: string): KeyRecord {
 // non-streaming requests (their streaming counterpart keeps working),
 // so this bound is also a workaround for an observed provider infra
 // issue.
-const REQUEST: ChatParams = {
-  messages: [{ role: "user", content: "Say the single word: pong" }],
-  max_completion_tokens: 1024,
-  max_tokens: 1024,
-};
+const REQUEST_MAX_OUTPUT = 1024;
+// Kept for the unused-import typechecker; matrix now builds via resolver.
+void (null as unknown as ChatParams);
 
 /**
  * Retry a fetch on 429 and 5xx up to 3 times with linear backoff.
@@ -157,18 +178,18 @@ for (const t of INTEGRATION_TARGETS) {
       const tolerant = t.id === "openai" && isOpenAIReasoningModel(model);
 
       it(`non-streaming ${model}: succeeds`, async () => {
-        const p = buildProviderFetch(key(t, apiKey, model), REQUEST, false);
-        const r = await fetchWithRetry(p.url, {
+        const plan = await buildPlan(key(t, apiKey, model), model, false);
+        const r = await fetchWithRetry(plan.url, {
           method: "POST",
-          headers: p.headers,
-          body: p.body,
+          headers: plan.headers,
+          body: plan.body,
         });
         if (!r.ok) {
           const errBody = await r.text().catch(() => "");
           throw new Error(`HTTP ${r.status}: ${errBody.slice(0, 200)}`);
         }
         const data = (await r.json()) as Record<string, unknown>;
-        const completion = parseCompletionFor(p.endpoint, data);
+        const completion = parseCompletionFor(plan.endpoint, data);
         if (tolerant) {
           expect(completion.finish_reason).toBeDefined();
         } else {
@@ -177,8 +198,13 @@ for (const t of INTEGRATION_TARGETS) {
       }, 60_000);
 
       it(`streaming ${model}: emits ≥1 delta or terminates cleanly`, async () => {
-        const p = buildProviderFetch(key(t, apiKey, model), REQUEST, true);
-        const { deltas, events } = await runStreamToCompletion(p);
+        const plan = await buildPlan(key(t, apiKey, model), model, true);
+        const { deltas, events } = await runStreamToCompletion({
+          url: plan.url,
+          headers: plan.headers,
+          body: plan.body,
+          endpoint: plan.endpoint,
+        });
         const ended = events.some((e) => e.type === "done" || e.type === "error");
         if (tolerant) {
           expect(ended).toBe(true);

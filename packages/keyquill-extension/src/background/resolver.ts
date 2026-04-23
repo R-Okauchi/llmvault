@@ -82,6 +82,13 @@ export interface ResolverInput {
   request: ResolverRequest;
   origin: string;
   key: KeyRecord;
+  /**
+   * Override the catalogue-selected endpoint. Used by the 404 fallback
+   * path in streamManager: when /chat/completions returns the pro-model
+   * 404 signal, we retry once with `forceEndpoint: "responses"` and
+   * rebuild the body in the Responses shape using the same model.
+   */
+  forceEndpoint?: "chat" | "responses";
 }
 
 export interface ExecutionPlan {
@@ -497,10 +504,14 @@ interface BodyBuildInput {
   topP: number | undefined;
 }
 
-function buildBody(input: BodyBuildInput): { url: string; headers: Record<string, string>; body: string } {
-  const { model, request, key } = input;
+function buildBody(
+  input: BodyBuildInput,
+  forceEndpoint?: "chat" | "responses",
+): { url: string; headers: Record<string, string>; body: string } {
+  const { model, key } = input;
   const base = key.baseUrl.replace(/\/+$/, "");
-  switch (model.endpoint) {
+  const endpoint = forceEndpoint ?? model.endpoint;
+  switch (endpoint) {
     case "chat":
       return buildChatBody(base, input);
     case "responses":
@@ -798,15 +809,20 @@ export async function resolveRequest(input: ResolverInput): Promise<ResolverOutp
   if (budget) return budget;
 
   // Stage 8: body
-  const built = buildBody({
-    model,
-    request: input.request,
-    key: input.key,
-    maxOutput: tokenClamp.effective,
-    reasoningEffort: reasoningClamp.effective,
-    temperature: temp.value,
-    topP,
-  });
+  const built = buildBody(
+    {
+      model,
+      request: input.request,
+      key: input.key,
+      maxOutput: tokenClamp.effective,
+      reasoningEffort: reasoningClamp.effective,
+      temperature: temp.value,
+      topP,
+    },
+    input.forceEndpoint,
+  );
+  const effectiveEndpoint: "chat" | "responses" | "anthropic" =
+    input.forceEndpoint ?? model.endpoint;
 
   const trace: ResolverTrace = {
     modelChosen: model.id,
@@ -840,7 +856,7 @@ export async function resolveRequest(input: ResolverInput): Promise<ResolverOutp
     kind: "ready",
     plan: {
       model,
-      endpoint: model.endpoint,
+      endpoint: effectiveEndpoint,
       url: built.url,
       headers: built.headers,
       body: built.body,
