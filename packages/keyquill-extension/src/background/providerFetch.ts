@@ -13,6 +13,7 @@
  */
 
 import type { KeyRecord, ChatParams, ChatMessage, Tool } from "../shared/protocol.js";
+import { getModel, isOpenAIReasoning } from "../shared/modelCatalog.js";
 
 export interface ProviderFetchParams {
   url: string;
@@ -32,30 +33,29 @@ type ReasoningEffort = "minimal" | "low" | "medium" | "high";
 
 /**
  * Detect OpenAI reasoning-family models. These require `max_completion_tokens`
- * and REJECT `max_tokens` with a 400 error. Pattern matches real OpenAI
- * model names in production as of 2026-04:
+ * and REJECT `max_tokens` with a 400 error.
  *
- *   - o-series (API-only since Feb 2026): o1, o1-mini, o3, o3-mini, o4-mini, o3-pro
- *   - GPT-5 family (every active ChatGPT model in 2026): gpt-5, gpt-5-mini,
- *     gpt-5.2, gpt-5.4, gpt-5.4-mini, gpt-5.4-nano, gpt-5.4-thinking,
- *     gpt-5.4-pro
- *
- * Legacy models (gpt-4, gpt-4o, gpt-4.1, gpt-3.5-turbo) still accept
- * `max_tokens` and are NOT matched.
+ * Catalog-driven when the model is known (src/shared/modelCatalog.ts);
+ * falls back to a regex heuristic for models not yet catalogued (newly
+ * released, deprecated, or variant names). Keeping the regex as a safety
+ * net ensures behaviour for unlisted names is the same as before Phase 1.
  */
 export function isOpenAIReasoningModel(model: string): boolean {
-  return /^(o\d+|gpt-5)/i.test(model);
+  const spec = getModel(model);
+  if (spec) return isOpenAIReasoning(spec);
+  return REASONING_FALLBACK_REGEX.test(model);
 }
 
+const REASONING_FALLBACK_REGEX = /^(o\d+|gpt-5)/i;
+
 /**
- * OpenAI model patterns that ONLY work on the Responses API.
- *
- * When OpenAI ships a new `*-pro` model, add its pattern here AND to the
- * integration test `TARGETS` so CI catches endpoint regressions. The
- * runtime 404 fallback in streamManager.ts acts as a safety net and logs
- * `console.warn` — treat that warning as a bug report against this table.
+ * OpenAI model patterns that ONLY work on the Responses API — regex
+ * safety net for models not yet in the catalogue. The primary source of
+ * truth is `ModelSpec.endpoint === "responses"`; this array exists so
+ * that unlisted `*-pro` releases still route correctly until the catalog
+ * catches up.
  */
-const OPENAI_RESPONSES_ONLY: RegExp[] = [
+const OPENAI_RESPONSES_ONLY_FALLBACK: RegExp[] = [
   /^gpt-5(\.\d+)?-pro(-.*)?$/i,
   /^o1-pro(-.*)?$/i,
   /^o3-pro(-.*)?$/i,
@@ -65,13 +65,21 @@ const OPENAI_RESPONSES_ONLY: RegExp[] = [
  * Which OpenAI endpoint shape does this (provider, model) pair need?
  * Non-openai providers always use `/chat/completions` — no other
  * OpenAI-compatible vendor implements the Responses API.
+ *
+ * Catalog-driven when the model is known; regex fallback for the
+ * catalog-miss case covers new `*-pro` variants before the monthly
+ * catalog release ships.
  */
 export function selectOpenAIEndpoint(
   provider: KeyRecord,
   model: string,
 ): "chat" | "responses" {
   if (provider.provider !== "openai") return "chat";
-  return OPENAI_RESPONSES_ONLY.some((re) => re.test(model)) ? "responses" : "chat";
+  const spec = getModel(model);
+  if (spec) {
+    return spec.endpoint === "responses" ? "responses" : "chat";
+  }
+  return OPENAI_RESPONSES_ONLY_FALLBACK.some((re) => re.test(model)) ? "responses" : "chat";
 }
 
 interface NormalizedParams {

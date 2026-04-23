@@ -311,6 +311,70 @@ describe("buildProviderFetch (Anthropic path)", () => {
   });
 });
 
+// ── Catalog-dispatch (Phase 2) ─────────────────────────
+// These tests pin the new behaviour: catalog is consulted first, regex
+// is only a fallback for models not yet listed in modelCatalog.ts.
+
+describe("catalog dispatch for isOpenAIReasoningModel", () => {
+  it("catalog lookup: gpt-5.4-mini is flagged reasoning via capability+constraint", () => {
+    expect(isOpenAIReasoningModel("gpt-5.4-mini")).toBe(true);
+  });
+
+  it("catalog lookup: gpt-4o-mini is NOT reasoning (capability missing)", () => {
+    expect(isOpenAIReasoningModel("gpt-4o-mini")).toBe(false);
+  });
+
+  it("regex fallback: unlisted reasoning-style names still detected (o1, gpt-5.2)", () => {
+    // o1, o1-mini, o1-preview, gpt-5.2, gpt-5-thinking are NOT in the
+    // current catalog — resolver falls back to the legacy regex.
+    expect(isOpenAIReasoningModel("o1")).toBe(true);
+    expect(isOpenAIReasoningModel("o1-mini")).toBe(true);
+    expect(isOpenAIReasoningModel("o1-preview")).toBe(true);
+    expect(isOpenAIReasoningModel("gpt-5.2")).toBe(true);
+    expect(isOpenAIReasoningModel("gpt-5-thinking")).toBe(true);
+  });
+
+  it("regex fallback: unrelated names correctly stay false", () => {
+    expect(isOpenAIReasoningModel("gpt-3.5-turbo")).toBe(false);
+    expect(isOpenAIReasoningModel("some-future-model")).toBe(false);
+  });
+});
+
+describe("catalog dispatch for selectOpenAIEndpoint", () => {
+  const openai = mkKey({ provider: "openai" });
+  const gemini = mkKey({ provider: "gemini" });
+
+  it("catalog-known pro models route via spec.endpoint", () => {
+    expect(selectOpenAIEndpoint(openai, "gpt-5.4-pro")).toBe("responses");
+    expect(selectOpenAIEndpoint(openai, "gpt-5-pro")).toBe("responses");
+    expect(selectOpenAIEndpoint(openai, "o3-pro")).toBe("responses");
+  });
+
+  it("catalog-known non-pro models route to chat", () => {
+    expect(selectOpenAIEndpoint(openai, "gpt-5.4-mini")).toBe("chat");
+    expect(selectOpenAIEndpoint(openai, "gpt-5-mini")).toBe("chat");
+    expect(selectOpenAIEndpoint(openai, "o3-mini")).toBe("chat");
+    expect(selectOpenAIEndpoint(openai, "gpt-4o")).toBe("chat");
+  });
+
+  it("regex fallback catches pro variants not yet in catalog", () => {
+    // These model IDs are not catalogued but the fallback regex
+    // recognises them as pro variants.
+    expect(selectOpenAIEndpoint(openai, "o1-pro")).toBe("responses");
+    expect(selectOpenAIEndpoint(openai, "gpt-5.2-pro")).toBe("responses");
+    expect(selectOpenAIEndpoint(openai, "gpt-5.4-pro-2026-06")).toBe("responses");
+  });
+
+  it("unknown + no fallback-match defaults to chat", () => {
+    expect(selectOpenAIEndpoint(openai, "some-future-model")).toBe("chat");
+  });
+
+  it("non-openai provider never uses responses even for pro-named models", () => {
+    expect(selectOpenAIEndpoint(gemini, "gpt-5.4-pro")).toBe("chat");
+    expect(selectOpenAIEndpoint(mkKey({ provider: "openrouter" }), "openai/gpt-5-pro")).toBe("chat");
+  });
+});
+
 // ── Responses API endpoint selection ───────────────────
 
 describe("selectOpenAIEndpoint", () => {
