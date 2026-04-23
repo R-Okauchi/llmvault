@@ -380,7 +380,8 @@ export type IncomingRequest =
   | { type: "getLedger"; keyId: string; since?: number }
   | { type: "getMonthSpend"; keyId: string; month?: string }
   | { type: "exportLedger"; keyId: string }
-  | ChatRequestMessage;
+  | ChatRequestMessage
+  | PreviewPlanRequest;
 
 /** Non-streaming chat (via sendMessage) */
 export interface ChatRequestMessage extends ChatParams {
@@ -393,6 +394,81 @@ export interface ChatStreamRequest extends ChatParams {
   type: "chatStream";
   maxTokens?: number;
 }
+
+/**
+ * Dry-run variant of "chat" — runs the resolver without issuing the
+ * provider fetch. Replies with a `PlanPreview` so the SDK caller can
+ * decide, ahead of time, what model would run, at what estimated cost,
+ * and whether any consent prompts or policy rejections would fire.
+ *
+ * Consent popups are NOT triggered — the preview surfaces the
+ * consent-required state so the app can message it in-flow.
+ */
+export interface PreviewPlanRequest extends ChatParams {
+  type: "previewPlan";
+  maxTokens?: number;
+}
+
+/**
+ * Subset of `ModelSpec` safe to leak across the web-page boundary. Omits
+ * endpoint / constraints / full pricing table to avoid exposing internal
+ * broker details; keeps the fields an app would meaningfully use.
+ */
+export interface PlanPreviewModel {
+  id: string;
+  displayName: string;
+  capabilities: readonly Capability[];
+  releaseStage: "stable" | "preview" | "deprecated";
+}
+
+/**
+ * Informational result of a dry-run resolver pass.
+ *
+ * `ready` — the request would execute. Use for pre-flight cost display
+ *   or to decide whether to actually call `chat` / `chatStream`.
+ * `consent-required` — the request would trigger a consent popup.
+ *   Surface it to the user ("confirming this may prompt for approval")
+ *   rather than sending the request blind.
+ * `rejected` — the request would fail the resolver (policy violation,
+ *   no matching model, budget blocked, etc.).
+ */
+export type PlanPreview =
+  | {
+      kind: "ready";
+      keyId: string;
+      provider: string;
+      model: PlanPreviewModel;
+      estimatedCostUSD: number;
+      estimatedTokens: { input: number; output: number };
+      selectionReason:
+        | "default"
+        | "explicit"
+        | "capability-match"
+        | "preferred-per-capability";
+    }
+  | {
+      kind: "consent-required";
+      reason: ConsentReason;
+      message: string;
+      proposedModel?: PlanPreviewModel;
+    }
+  | {
+      kind: "rejected";
+      reason: string;
+      message: string;
+    };
+
+/**
+ * Reasons the resolver would request per-request consent. Mirrors the
+ * internal `ConsentReason` union in resolver.ts but lives here so the
+ * SDK can import the string literal set without pulling in background
+ * modules.
+ */
+export type ConsentReason =
+  | "model-outside-allowlist"
+  | "model-in-denylist"
+  | "high-cost"
+  | "capability-missing";
 
 // ── Outgoing Responses (extension → page/popup) ────────
 
@@ -430,6 +506,7 @@ export type OutgoingResponse =
   | { type: "ok" }
   | { type: "testResult"; reachable: boolean; status?: number; detail?: string }
   | { type: "chatCompletion"; completion: ChatCompletion; keyId: string }
+  | { type: "planPreview"; preview: PlanPreview }
   | { type: "bindings"; bindings: OriginBinding[] }
   | { type: "ledger"; entries: LedgerEntrySummary[] }
   | { type: "spend"; keyId: string; month: string; totalUSD: number }

@@ -51,9 +51,14 @@ export type {
   ChatStreamParams,
   ChatRequest,
   ChatStreamRequest,
+  PreviewPlanRequest,
   // Response types
   ChatCompletion,
   VaultResponse,
+  // Plan preview
+  PlanPreview,
+  PlanPreviewModel,
+  ConsentReason,
   // Stream events
   StreamEvent,
   // Wire types

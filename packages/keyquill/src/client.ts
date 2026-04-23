@@ -29,11 +29,21 @@ import type {
   ChatParams,
   ChatStreamParams,
   ChatCompletion,
+  PlanPreview,
   StreamEvent,
   VaultRequest,
   VaultResponse,
 } from "./types.js";
-export type { Capability, Tone, ReasoningEffort, ChatParams, ChatStreamParams } from "./types.js";
+export type {
+  Capability,
+  Tone,
+  ReasoningEffort,
+  ChatParams,
+  ChatStreamParams,
+  PlanPreview,
+  PlanPreviewModel,
+  ConsentReason,
+} from "./types.js";
 import { ErrorCode, SDK_PROTOCOL_VERSION } from "./types.js";
 import { sendExtensionMessage, connectToExtension, detectExtensionId } from "./detect.js";
 import { portToStream } from "./stream.js";
@@ -192,6 +202,40 @@ export class Keyquill {
     const res = await this.send({ type: "chat", ...params });
     if (res.type === "chatCompletion") {
       return { completion: res.completion, keyId: res.keyId };
+    }
+    if (res.type === "error") {
+      throw new Error(`[${res.code}] ${res.message}`);
+    }
+    throw new Error("Unexpected response type");
+  }
+
+  /**
+   * Dry-run the resolver against the user's policy without issuing the
+   * provider fetch or opening a consent popup. Useful for pre-flight UX
+   * (cost previews, "this will need approval" hints, capability fallback
+   * logic).
+   *
+   * The returned `PlanPreview` is a discriminated union of:
+   *   - `{ kind: "ready", model, estimatedCostUSD, ... }`
+   *   - `{ kind: "consent-required", reason, message, proposedModel? }`
+   *   - `{ kind: "rejected", reason, message }`
+   *
+   * Requires an active connection (call `connect()` first).
+   *
+   * @example
+   * const plan = await vault.preview({
+   *   messages: [{ role: "user", content: "..." }],
+   *   requires: ["reasoning"],
+   *   tone: "precise",
+   * });
+   * if (plan.kind === "ready") {
+   *   console.log(`Would use ${plan.model.displayName}, ~$${plan.estimatedCostUSD.toFixed(4)}`);
+   * }
+   */
+  async preview(params: ChatParams): Promise<PlanPreview> {
+    const res = await this.send({ type: "previewPlan", ...params });
+    if (res.type === "planPreview") {
+      return res.preview;
     }
     if (res.type === "error") {
       throw new Error(`[${res.code}] ${res.message}`);
