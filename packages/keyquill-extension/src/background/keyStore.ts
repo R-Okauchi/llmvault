@@ -340,6 +340,28 @@ export async function updateKey(input: UpdateKeyInput): Promise<KeyRecord | null
   return updated;
 }
 
+/**
+ * Replace a key's full KeyPolicy. Called from the popup Policy editor.
+ * Bumps policyVersion to the current schema on save so stale shapes are
+ * upgraded transparently.
+ */
+export async function updatePolicy(keyId: string, policy: KeyPolicy): Promise<KeyRecord | null> {
+  const records = await getKeys();
+  const idx = records.findIndex((r) => r.keyId === keyId);
+  if (idx < 0) return null;
+  const existing = records[idx];
+  const updated: KeyRecord = {
+    ...existing,
+    policy,
+    policyVersion: CURRENT_POLICY_VERSION,
+    updatedAt: Date.now(),
+  };
+  const next = [...records];
+  next[idx] = updated;
+  await ext.storage.session.set({ [STORAGE_KEY]: next });
+  return updated;
+}
+
 export async function deleteKey(keyId: string): Promise<void> {
   const records = await getKeys();
   const filtered = records.filter((r) => r.keyId !== keyId);

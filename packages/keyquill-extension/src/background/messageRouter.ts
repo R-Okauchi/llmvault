@@ -24,9 +24,11 @@ import {
   getKey,
   addKey,
   updateKey,
+  updatePolicy,
   deleteKey,
   setActive,
 } from "./keyStore.js";
+import { queryByKey, getMonthSpend, exportCSV } from "./ledger.js";
 import {
   getBindings,
   hasGrant,
@@ -226,6 +228,62 @@ export async function handleMessage(
       }
       await setActive(request.keyId);
       return { type: "ok" };
+    }
+
+    // ── Popup-only: policy + ledger ──
+
+    case "updatePolicy": {
+      if (!isInternal(sender)) {
+        return {
+          type: "error",
+          code: "BLOCKED",
+          message: "Key policy edits are popup-only.",
+        };
+      }
+      const updated = await updatePolicy(request.keyId, request.policy);
+      if (!updated) {
+        return { type: "error", code: "KEY_NOT_FOUND", message: "Key not found" };
+      }
+      return { type: "ok" };
+    }
+
+    case "getLedger": {
+      if (!isInternal(sender)) {
+        return {
+          type: "error",
+          code: "BLOCKED",
+          message: "Audit log is popup-only.",
+        };
+      }
+      const entries = await queryByKey(request.keyId, request.since);
+      return { type: "ledger", entries };
+    }
+
+    case "getMonthSpend": {
+      if (!isInternal(sender)) {
+        return {
+          type: "error",
+          code: "BLOCKED",
+          message: "Spend queries are popup-only.",
+        };
+      }
+      const total = await getMonthSpend(request.keyId, request.month);
+      const month =
+        request.month ??
+        `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, "0")}`;
+      return { type: "spend", keyId: request.keyId, month, totalUSD: total };
+    }
+
+    case "exportLedger": {
+      if (!isInternal(sender)) {
+        return {
+          type: "error",
+          code: "BLOCKED",
+          message: "Ledger export is popup-only.",
+        };
+      }
+      const content = await exportCSV(request.keyId);
+      return { type: "csv", content };
     }
 
     // ── Popup-only: binding management ──

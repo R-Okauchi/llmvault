@@ -303,6 +303,11 @@ export type IncomingRequest =
   | { type: "setBinding"; origin: string; keyId: string }
   | { type: "revokeBinding"; origin: string }
   | { type: "_consentResponse"; origin: string; approved: boolean; keyId?: string }
+  // Popup-only: policy editor + audit log
+  | { type: "updatePolicy"; keyId: string; policy: KeyPolicy }
+  | { type: "getLedger"; keyId: string; since?: number }
+  | { type: "getMonthSpend"; keyId: string; month?: string }
+  | { type: "exportLedger"; keyId: string }
   | ChatRequestMessage;
 
 /** Non-streaming chat (via sendMessage) */
@@ -326,6 +331,26 @@ export interface ChatCompletion {
   usage?: { promptTokens: number; completionTokens: number };
 }
 
+/**
+ * Public ledger entry shape sent to the popup. Matches the internal
+ * LedgerEntry but re-declared here (not imported) because protocol.ts
+ * is wire-level and must not depend on background-only modules.
+ */
+export interface LedgerEntrySummary {
+  timestamp: number;
+  keyId: string;
+  origin: string;
+  model: string;
+  endpoint: "chat" | "responses" | "anthropic";
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens?: number;
+  estimatedCostUSD: number;
+  actualCostUSD: number;
+  status: "success" | "error" | "cancelled";
+  errorCode?: string;
+}
+
 export type OutgoingResponse =
   | { type: "pong"; version: string; protocol: number; connected?: boolean }
   | { type: "connected"; origin: string }
@@ -334,6 +359,9 @@ export type OutgoingResponse =
   | { type: "testResult"; reachable: boolean; status?: number; detail?: string }
   | { type: "chatCompletion"; completion: ChatCompletion; keyId: string }
   | { type: "bindings"; bindings: OriginBinding[] }
+  | { type: "ledger"; entries: LedgerEntrySummary[] }
+  | { type: "spend"; keyId: string; month: string; totalUSD: number }
+  | { type: "csv"; content: string }
   | { type: "error"; code: string; message: string };
 
 // ── Stream Events (extension → page, over Port) ───────

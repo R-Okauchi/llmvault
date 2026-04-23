@@ -1,6 +1,7 @@
 import { render } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import type {
+  KeyPolicy,
   KeySummary,
   OriginBinding,
   IncomingRequest,
@@ -9,6 +10,9 @@ import type {
 } from "../shared/protocol.js";
 import { ext } from "../shared/browser.js";
 import { PRESETS, getPreset } from "../shared/presets.js";
+import { PolicyEditor } from "./components/PolicyEditor.js";
+import { AuditPanel } from "./components/AuditPanel.js";
+import { SpendBar } from "./components/SpendBar.js";
 
 function sendMessage(msg: IncomingRequest): Promise<OutgoingResponse> {
   return new Promise((resolve) => {
@@ -36,6 +40,8 @@ function App() {
   const [showActiveSwitcher, setShowActiveSwitcher] = useState(false);
   const [testResultKey, setTestResultKey] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [expandedPanel, setExpandedPanel] = useState<"policy" | "audit" | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   // Add-key form fields (controlled so the preset dropdown can auto-fill
   // base URL / default model). user edits remain stable after switching.
@@ -236,7 +242,18 @@ function App() {
             <div class="provider-group__header">
               {provider} ({list.length})
             </div>
-            {list.map((k) => (
+            {list.map((k) => {
+              const isExpanded = expandedKey === k.keyId;
+              const togglePanel = (panel: "policy" | "audit") => {
+                if (isExpanded && expandedPanel === panel) {
+                  setExpandedKey(null);
+                  setExpandedPanel(null);
+                } else {
+                  setExpandedKey(k.keyId);
+                  setExpandedPanel(panel);
+                }
+              };
+              return (
               <div key={k.keyId} class={`key-card ${k.isActive ? "key-card--active" : ""}`}>
                 <div class="key-card__header">
                   <span class="key-card__label">{k.label}</span>
@@ -250,6 +267,7 @@ function App() {
                   <span class="key-card__hint">{k.keyHint}</span>
                   <span class="key-card__model">{k.defaultModel}</span>
                 </div>
+                <SpendBar keyId={k.keyId} budgetUSD={k.policy?.budget.monthlyBudgetUSD} />
                 <div class="key-card__actions">
                   {!k.isActive && (
                     <button class="btn btn--ghost btn--sm" onClick={() => handleSetActive(k.keyId)}>
@@ -258,6 +276,18 @@ function App() {
                   )}
                   <button class="btn btn--secondary btn--sm" onClick={() => handleTest(k.keyId)}>
                     Test
+                  </button>
+                  <button
+                    class={`btn btn--ghost btn--sm ${isExpanded && expandedPanel === "policy" ? "btn--active" : ""}`}
+                    onClick={() => togglePanel("policy")}
+                  >
+                    Policy
+                  </button>
+                  <button
+                    class={`btn btn--ghost btn--sm ${isExpanded && expandedPanel === "audit" ? "btn--active" : ""}`}
+                    onClick={() => togglePanel("audit")}
+                  >
+                    Audit
                   </button>
                   <button class="btn btn--ghost btn--sm" onClick={() => handleDelete(k.keyId)}>
                     Delete
@@ -270,8 +300,33 @@ function App() {
                     {testResult}
                   </div>
                 )}
+                {isExpanded && expandedPanel === "policy" && (
+                  <PolicyEditor
+                    keyId={k.keyId}
+                    initial={k.policy}
+                    onSaved={async () => {
+                      setExpandedKey(null);
+                      setExpandedPanel(null);
+                      await loadKeys();
+                    }}
+                    onCancel={() => {
+                      setExpandedKey(null);
+                      setExpandedPanel(null);
+                    }}
+                  />
+                )}
+                {isExpanded && expandedPanel === "audit" && (
+                  <AuditPanel
+                    keyId={k.keyId}
+                    onClose={() => {
+                      setExpandedKey(null);
+                      setExpandedPanel(null);
+                    }}
+                  />
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         ))}
 
