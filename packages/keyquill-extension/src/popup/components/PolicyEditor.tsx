@@ -23,13 +23,6 @@ interface Props {
   keyId: string;
   /** Used to sort autocomplete — models for this provider surface first. */
   provider: string;
-  /**
-   * The key's legacy `KeyRecord.defaultModel`. Shown as part of the
-   * effective-default preview so the user sees what the resolver would
-   * pick when `policy.modelPolicy.defaultModel` is blank. This prop goes
-   * away when Phase 13d drops the legacy field.
-   */
-  legacyDefaultModel?: string;
   initial?: KeyPolicy;
   onSaved: (policy: KeyPolicy) => void;
   onCancel: () => void;
@@ -62,7 +55,6 @@ function joinList(xs: string[] | undefined): string {
 export function PolicyEditor({
   keyId,
   provider,
-  legacyDefaultModel,
   initial,
   onSaved,
   onCancel,
@@ -102,15 +94,14 @@ export function PolicyEditor({
       label: "",
       apiKey: "",
       baseUrl: "",
-      defaultModel: legacyDefaultModel ?? "",
       isActive: true,
       policy,
-      policyVersion: 1,
+      policyVersion: 2,
       createdAt: 0,
       updatedAt: 0,
     };
     return resolveKeyDefault(syntheticKey);
-  }, [keyId, provider, legacyDefaultModel, policy]);
+  }, [keyId, provider, policy]);
 
   const defaultModelInput = policy.modelPolicy.defaultModel ?? "";
   const catalogHit = defaultModelInput ? getModel(defaultModelInput) : null;

@@ -257,7 +257,7 @@ function App() {
                 </div>
                 <div class="key-card__meta">
                   <span class="key-card__hint">{k.keyHint}</span>
-                  <span class="key-card__model">{k.defaultModel}</span>
+                  <span class="key-card__model">{k.effectiveDefaultModel ?? "(no default)"}</span>
                 </div>
                 <SpendBar keyId={k.keyId} budgetUSD={k.policy?.budget.monthlyBudgetUSD} />
                 <div class="key-card__actions">
@@ -296,7 +296,6 @@ function App() {
                   <PolicyEditor
                     keyId={k.keyId}
                     provider={k.provider}
-                    legacyDefaultModel={k.defaultModel}
                     initial={k.policy}
                     onSaved={async () => {
                       setExpandedKey(null);

@@ -186,7 +186,6 @@ export async function handleMessage(
           baseUrl: request.baseUrl,
           defaultModel: request.defaultModel,
           isActive: request.isActive,
-          defaults: request.defaults,
         });
         return { type: "ok" };
       } catch (err) {
@@ -211,9 +210,7 @@ export async function handleMessage(
           keyId: request.keyId,
           label: request.label,
           baseUrl: request.baseUrl,
-          defaultModel: request.defaultModel,
           apiKey: request.apiKey,
-          defaults: request.defaults,
         });
         if (!updated) {
           return { type: "error", code: "KEY_NOT_FOUND", message: "Key not found" };

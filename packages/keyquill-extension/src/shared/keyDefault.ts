@@ -6,13 +6,15 @@
  * resolver (for Tier-1 dispatch) need the same chain.
  *
  * Chain (highest priority first):
- *   1. Policy override — `key.policy.modelPolicy.defaultModel`
- *   2. Legacy record field — `key.defaultModel` (kept during the
- *      Phase 13a → 13d migration window)
- *   3. Preset default — `getPreset(key.provider).defaultModel`
- *   4. Catalog fallback — cheapest model for this provider by
- *      `outputPer1M`
- *   5. `null` if even the catalog has no entry
+ *   1. Policy pin — `key.policy.modelPolicy.defaultModel` (owned by the
+ *      user via the Policy editor).
+ *   2. Preset default — `getPreset(key.provider).defaultModel`.
+ *   3. Catalog fallback — cheapest model for this provider by
+ *      `outputPer1M`.
+ *   4. `null` if even the catalog has no entry.
+ *
+ * An unknown model string on the policy pin silently falls through to
+ * the preset so typos don't hard-brick Tier 1.
  */
 import type { KeyRecord } from "./protocol.js";
 import {
@@ -26,11 +28,6 @@ export function resolveKeyDefault(key: KeyRecord): ModelSpec | null {
   const policyDefault = key.policy?.modelPolicy.defaultModel;
   if (policyDefault) {
     const spec = getModel(policyDefault);
-    if (spec) return spec;
-  }
-
-  if (key.defaultModel) {
-    const spec = getModel(key.defaultModel);
     if (spec) return spec;
   }
 

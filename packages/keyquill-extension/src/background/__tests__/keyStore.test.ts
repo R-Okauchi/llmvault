@@ -56,9 +56,15 @@ if (!globalThis.crypto) {
 globalThis.crypto.randomUUID = () =>
   `uuid-${++uuidCounter}` as `${string}-${string}-${string}-${string}-${string}`;
 
-const { addKey, getKeys, setActive, deleteKey, updateKey, getActiveKey } = await import(
-  "../keyStore.js"
-);
+const {
+  addKey,
+  getKeys,
+  getKeySummaries,
+  setActive,
+  deleteKey,
+  updateKey,
+  getActiveKey,
+} = await import("../keyStore.js");
 const { getBindings, setBinding } = await import("../bindingStore.js");
 
 function reset() {
@@ -331,8 +337,8 @@ describe("keyStore v3 (active-key model)", () => {
     });
   });
 
-  describe("policy migration (Phase 3)", () => {
-    it("synthesizes a default policy for a new record with no defaults", async () => {
+  describe("policy migration", () => {
+    it("synthesizes a default policy for a new record", async () => {
       await addKey({
         provider: "openai",
         label: "Work",
@@ -343,41 +349,29 @@ describe("keyStore v3 (active-key model)", () => {
       const keys = await getKeys();
       expect(keys[0].policy).toBeDefined();
       expect(keys[0].policy?.modelPolicy.mode).toBe("open");
+      expect(keys[0].policy?.modelPolicy.defaultModel).toBe("gpt-5.4-mini");
       expect(keys[0].policy?.budget.onBudgetHit).toBe("warn");
       expect(keys[0].policy?.privacy.requireHttps).toBe(true);
       expect(keys[0].policy?.behavior.autoFallback).toBe(true);
       expect(keys[0].policy?.sampling).toBeUndefined();
-      expect(keys[0].policyVersion).toBe(1);
+      expect(keys[0].policyVersion).toBe(2);
     });
 
-    it("maps KeyDefaults.temperature → policy.sampling.temperature", async () => {
+    it("addKey without defaultModel leaves policy.modelPolicy.defaultModel unset", async () => {
+      // Preset providers can skip defaultModel; resolveKeyDefault falls
+      // through to the preset chain at request time.
       await addKey({
         provider: "openai",
         label: "Work",
         apiKey: "sk-w",
         baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-4o",
-        defaults: { temperature: 0.3, topP: 0.9 },
       });
       const keys = await getKeys();
-      expect(keys[0].policy?.sampling).toEqual({ temperature: 0.3, topP: 0.9 });
+      expect(keys[0].policy?.modelPolicy.defaultModel).toBeUndefined();
     });
 
-    it("maps KeyDefaults.reasoningEffort → policy.budget.maxReasoningEffort", async () => {
-      await addKey({
-        provider: "openai",
-        label: "Work",
-        apiKey: "sk-w",
-        baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-5.4-pro",
-        defaults: { reasoningEffort: "medium" },
-      });
-      const keys = await getKeys();
-      expect(keys[0].policy?.budget.maxReasoningEffort).toBe("medium");
-    });
-
-    it("backfills policy on legacy records (pre-policy storage read)", async () => {
-      // Pretend storage was written by a pre-Phase-3 build: defaults, no policy.
+    it("migrates legacy records with KeyDefaults into policy.sampling + policy.budget", async () => {
+      // Pre-Phase-3 storage shape: defaults, no policy, legacy defaultModel.
       storage["keyquill_keys"] = [
         {
           keyId: "legacy-1",
@@ -396,14 +390,16 @@ describe("keyStore v3 (active-key model)", () => {
       expect(keys[0].policy).toBeDefined();
       expect(keys[0].policy?.sampling?.temperature).toBe(0.7);
       expect(keys[0].policy?.budget.maxReasoningEffort).toBe("high");
-      expect(keys[0].policyVersion).toBe(1);
-      // Storage should be rewritten with policy in place so subsequent
-      // reads don't re-synthesize.
-      const persisted = (storage["keyquill_keys"] as Array<{ policy?: unknown }>)[0];
-      expect(persisted.policy).toBeDefined();
+      expect(keys[0].policy?.modelPolicy.defaultModel).toBe("gpt-4o");
+      expect(keys[0].policyVersion).toBe(2);
+      // Storage should be rewritten with the legacy defaultModel stripped.
+      const persisted = (storage["keyquill_keys"] as Array<
+        Record<string, unknown>
+      >)[0];
+      expect(persisted).not.toHaveProperty("defaultModel");
     });
 
-    it("preserves an existing policy instead of overwriting on read", async () => {
+    it("preserves an existing policy instead of overwriting on read (but still strips legacy defaultModel)", async () => {
       storage["keyquill_keys"] = [
         {
           keyId: "k1",
@@ -414,7 +410,12 @@ describe("keyStore v3 (active-key model)", () => {
           defaultModel: "gpt-4o",
           isActive: true,
           policy: {
-            modelPolicy: { mode: "allowlist", allowedModels: ["gpt-4o"], onViolation: "reject" },
+            modelPolicy: {
+              mode: "allowlist",
+              allowedModels: ["gpt-4o"],
+              onViolation: "reject",
+              defaultModel: "gpt-4o",
+            },
             budget: { monthlyBudgetUSD: 5, onBudgetHit: "block" },
             privacy: { requireHttps: true, logAuditEvents: true },
             behavior: { autoFallback: false, maxRetries: 0, timeoutMs: 30_000 },
@@ -428,55 +429,14 @@ describe("keyStore v3 (active-key model)", () => {
       expect(keys[0].policy?.modelPolicy.mode).toBe("allowlist");
       expect(keys[0].policy?.budget.monthlyBudgetUSD).toBe(5);
       expect(keys[0].policy?.behavior.autoFallback).toBe(false);
+      expect(keys[0].policyVersion).toBe(2);
+      const persisted = (storage["keyquill_keys"] as Array<
+        Record<string, unknown>
+      >)[0];
+      expect(persisted).not.toHaveProperty("defaultModel");
     });
 
-    it("updateKey re-syncs policy.sampling when defaults change", async () => {
-      const k = await addKey({
-        provider: "openai",
-        label: "Work",
-        apiKey: "sk-w",
-        baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-4o",
-        defaults: { temperature: 0.5 },
-      });
-      await updateKey({ keyId: k.keyId, defaults: { temperature: 0.9, topP: 0.5 } });
-      const after = await getKeys();
-      expect(after[0].policy?.sampling).toEqual({ temperature: 0.9, topP: 0.5 });
-    });
-
-    it("updateKey clears policy.sampling when every default is set undefined", async () => {
-      const k = await addKey({
-        provider: "openai",
-        label: "Work",
-        apiKey: "sk-w",
-        baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-4o",
-        defaults: { temperature: 0.5 },
-      });
-      // updateKey treats input.defaults as a shallow merge; explicitly
-      // setting a key to undefined strips it. To clear all sampling,
-      // undefine each field.
-      await updateKey({
-        keyId: k.keyId,
-        defaults: { temperature: undefined, topP: undefined, reasoningEffort: undefined },
-      });
-      const after = await getKeys();
-      expect(after[0].policy?.sampling).toBeUndefined();
-    });
-
-    it("synthesized policy seeds modelPolicy.defaultModel from addKey input.defaultModel", async () => {
-      await addKey({
-        provider: "openai",
-        label: "Work",
-        apiKey: "sk-w",
-        baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-5.4-pro",
-      });
-      const keys = await getKeys();
-      expect(keys[0].policy?.modelPolicy.defaultModel).toBe("gpt-5.4-pro");
-    });
-
-    it("backfills policy.modelPolicy.defaultModel on legacy records with a policy but no default", async () => {
+    it("Phase 13a backfill: copies record.defaultModel into modelPolicy.defaultModel when missing", async () => {
       storage["keyquill_keys"] = [
         {
           keyId: "k1",
@@ -505,7 +465,7 @@ describe("keyStore v3 (active-key model)", () => {
       expect(persisted.policy.modelPolicy.defaultModel).toBe("gpt-5.4-mini");
     });
 
-    it("does not overwrite modelPolicy.defaultModel when the user has already set one", async () => {
+    it("does not overwrite a user-set modelPolicy.defaultModel during migration", async () => {
       storage["keyquill_keys"] = [
         {
           keyId: "k1",
@@ -513,14 +473,14 @@ describe("keyStore v3 (active-key model)", () => {
           label: "Custom",
           apiKey: "sk-k1",
           baseUrl: "https://api.openai.com/v1",
-          defaultModel: "gpt-5.4-mini",
+          defaultModel: "gpt-5.4-mini", // record-level legacy
           isActive: true,
           policy: {
             modelPolicy: {
               mode: "allowlist",
               allowedModels: ["gpt-5.4-pro"],
               onViolation: "reject",
-              defaultModel: "gpt-5.4-pro",
+              defaultModel: "gpt-5.4-pro", // user's pin — wins
             },
             budget: { onBudgetHit: "warn" },
             privacy: { requireHttps: true, logAuditEvents: true },
@@ -535,38 +495,24 @@ describe("keyStore v3 (active-key model)", () => {
       expect(keys[0].policy?.modelPolicy.defaultModel).toBe("gpt-5.4-pro");
     });
 
-    it("updateKey(defaultModel) mirrors the new value into policy.modelPolicy.defaultModel", async () => {
-      const k = await addKey({
-        provider: "openai",
-        label: "Work",
-        apiKey: "sk-w",
-        baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-5.4-mini",
-      });
-      expect(k.policy?.modelPolicy.defaultModel).toBe("gpt-5.4-mini");
-      await updateKey({ keyId: k.keyId, defaultModel: "gpt-5.4-pro" });
-      const after = await getKeys();
-      expect(after[0].defaultModel).toBe("gpt-5.4-pro");
-      expect(after[0].policy?.modelPolicy.defaultModel).toBe("gpt-5.4-pro");
-    });
-
-    it("updateKey preserves user-edited modelPolicy even when defaults change", async () => {
-      // Seed a record that has both defaults AND a custom modelPolicy.
+    it("bumps policyVersion 1 → 2 and strips legacy defaultModel on read", async () => {
       storage["keyquill_keys"] = [
         {
           keyId: "k1",
           provider: "openai",
-          label: "Custom",
+          label: "v1",
           apiKey: "sk-k1",
           baseUrl: "https://api.openai.com/v1",
           defaultModel: "gpt-4o",
           isActive: true,
-          defaults: { temperature: 0.5 },
           policy: {
-            modelPolicy: { mode: "allowlist", allowedModels: ["gpt-4o"], onViolation: "reject" },
+            modelPolicy: {
+              mode: "open",
+              onViolation: "confirm",
+              defaultModel: "gpt-4o",
+            },
             budget: { onBudgetHit: "warn" },
             privacy: { requireHttps: true, logAuditEvents: true },
-            sampling: { temperature: 0.5 },
             behavior: { autoFallback: true, maxRetries: 2, timeoutMs: 60_000 },
           },
           policyVersion: 1,
@@ -574,13 +520,37 @@ describe("keyStore v3 (active-key model)", () => {
           updatedAt: 1,
         },
       ];
-      await updateKey({ keyId: "k1", defaults: { temperature: 0.9 } });
-      const after = await getKeys();
-      // sampling updated…
-      expect(after[0].policy?.sampling?.temperature).toBe(0.9);
-      // …but modelPolicy.mode preserved.
-      expect(after[0].policy?.modelPolicy.mode).toBe("allowlist");
-      expect(after[0].policy?.modelPolicy.allowedModels).toEqual(["gpt-4o"]);
+      await getKeys();
+      const persisted = (storage["keyquill_keys"] as Array<
+        Record<string, unknown>
+      >)[0];
+      expect(persisted.policyVersion).toBe(2);
+      expect(persisted).not.toHaveProperty("defaultModel");
+    });
+  });
+
+  describe("getKeySummaries effective-default computation", () => {
+    it("surfaces resolveKeyDefault's pick as effectiveDefaultModel", async () => {
+      await addKey({
+        provider: "openai",
+        label: "Work",
+        apiKey: "sk-w",
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-5.4-pro",
+      });
+      const [summary] = await getKeySummaries();
+      expect(summary.effectiveDefaultModel).toBe("gpt-5.4-pro");
+    });
+
+    it("falls through to preset default when policy pin is missing", async () => {
+      await addKey({
+        provider: "anthropic",
+        label: "Work",
+        apiKey: "sk-ant",
+        baseUrl: "https://api.anthropic.com/v1",
+      });
+      const [summary] = await getKeySummaries();
+      expect(summary.effectiveDefaultModel).toBe("claude-sonnet-4-6");
     });
   });
 });

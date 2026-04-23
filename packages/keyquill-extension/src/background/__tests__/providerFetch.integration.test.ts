@@ -34,7 +34,13 @@ function key(t: Target, apiKey: string, model: string): KeyRecord {
     label: "integration",
     apiKey,
     baseUrl: t.baseUrl,
-    defaultModel: model,
+    policy: {
+      modelPolicy: { mode: "open", onViolation: "confirm", defaultModel: model },
+      budget: { onBudgetHit: "warn" },
+      privacy: { requireHttps: true, logAuditEvents: true },
+      behavior: { autoFallback: true, maxRetries: 2, timeoutMs: 60_000 },
+    },
+    policyVersion: 2,
     createdAt: 0,
     updatedAt: 0,
   };

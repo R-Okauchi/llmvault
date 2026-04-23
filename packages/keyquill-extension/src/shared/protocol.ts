@@ -134,15 +134,15 @@ export interface ModelPolicy {
   /** What the broker does if the developer's request violates the mode. */
   onViolation: "reject" | "confirm";
   /**
-   * Explicit default model override. When a request specifies neither
+   * Explicit default model pin. When a request specifies neither
    * `prefer.model` nor `requires[]`, the resolver picks this.
    *
-   * Resolution chain when this is undefined:
-   *   1. provider preset's defaultModel (see presets.ts)
-   *   2. cheapest catalog model for this provider
+   * When undefined, the resolver falls back to:
+   *   1. the provider preset's defaultModel (see presets.ts)
+   *   2. the cheapest catalog model for this provider
    *
-   * Intentionally a string (not constrained to Capability enum) so users
-   * can supply a catalog-unknown model (e.g., their own fine-tune).
+   * Intentionally a free-form string (not constrained to the catalog)
+   * so users can supply their own fine-tunes or preview models.
    */
   defaultModel?: string;
 }
@@ -197,8 +197,13 @@ export const DEFAULT_KEY_POLICY: KeyPolicy = {
   behavior: { autoFallback: true, maxRetries: 2, timeoutMs: 60_000 },
 };
 
-/** Policy schema version. Bumped whenever KeyPolicy shape changes. */
-export const CURRENT_POLICY_VERSION = 1;
+/**
+ * Policy schema version.
+ *   1 — initial v1.0 broker shape (Phase 3).
+ *   2 — Phase 13d: `defaultModel` moved from the KeyRecord top level into
+ *       `policy.modelPolicy.defaultModel`; legacy field stripped on read.
+ */
+export const CURRENT_POLICY_VERSION = 2;
 
 export interface KeyRecord {
   keyId: string;           // UUID v4, immutable
@@ -206,7 +211,6 @@ export interface KeyRecord {
   label: string;           // required, user-facing name
   apiKey: string;
   baseUrl: string;
-  defaultModel: string;
   isActive?: boolean;      // invariant: at most one key across the wallet is true
   /** @deprecated see KeyDefaults. Migrated into `policy` on read. */
   defaults?: KeyDefaults;
@@ -220,13 +224,24 @@ export interface KeyRecord {
 
 /**
  * Safe projection returned to UI / SDK — never includes `apiKey`.
+ *
+ * `effectiveDefaultModel` is the resolver-resolved string that would be
+ * used when a request declares neither `requires` nor `prefer.model`.
+ * `undefined` when the catalog has no entry for this provider (unusual).
  */
 export interface KeySummary {
   keyId: string;
   provider: string;
   label: string;
   baseUrl: string;
-  defaultModel: string;
+  effectiveDefaultModel?: string;
+  /**
+   * @deprecated use `effectiveDefaultModel`. Retained through the 1.x
+   * series as a compatibility alias for SDK consumers that predated
+   * Phase 13d; always carries the same value as `effectiveDefaultModel`
+   * and will be removed in the next SDK major.
+   */
+  defaultModel?: string;
   isActive: boolean;
   /** @deprecated migrated into `policy.sampling` + `policy.budget.maxReasoningEffort`. */
   defaults?: KeyDefaults;
@@ -320,18 +335,22 @@ export type IncomingRequest =
       label: string;
       apiKey: string;
       baseUrl: string;
-      defaultModel: string;
+      /**
+       * Optional: when set, seeds `policy.modelPolicy.defaultModel` for the
+       * new key. Omitting it lets the resolver fall back through the
+       * preset / catalog chain at request time (preferred for preset
+       * providers). Required by the popup for `custom` providers, where
+       * no preset fallback exists.
+       */
+      defaultModel?: string;
       isActive?: boolean;
-      defaults?: KeyDefaults;
     }
   | {
       type: "updateKey";
       keyId: string;
       label?: string;
       baseUrl?: string;
-      defaultModel?: string;
       apiKey?: string;
-      defaults?: KeyDefaults;
     }
   | { type: "deleteKey"; keyId: string }
   | { type: "setActive"; keyId: string }

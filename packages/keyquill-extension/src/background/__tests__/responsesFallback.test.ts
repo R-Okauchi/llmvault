@@ -22,7 +22,13 @@ const testKey: KeyRecord = {
   label: "test",
   apiKey: "sk-test",
   baseUrl: "", // set after server boots
-  defaultModel: "gpt-5.4-mini",
+  policy: {
+    modelPolicy: { mode: "open", onViolation: "confirm", defaultModel: "gpt-5.4-mini" },
+    budget: { onBudgetHit: "warn" },
+    privacy: { requireHttps: true, logAuditEvents: true },
+    behavior: { autoFallback: true, maxRetries: 2, timeoutMs: 60_000 },
+  },
+  policyVersion: 2,
   createdAt: 0,
   updatedAt: 0,
 };
