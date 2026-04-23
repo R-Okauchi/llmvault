@@ -1,6 +1,6 @@
 {
   "name": "keyquill-relay",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Zero-knowledge E2E encrypted WebSocket relay for pairing a browser with a mobile LLM wallet. Ships a browser client, a Cloudflare Durable Object, and a Hono route factory.",
   "type": "module",
   "main": "./dist/index.js",
