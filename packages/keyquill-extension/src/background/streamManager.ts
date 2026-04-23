@@ -9,12 +9,23 @@ import type {
   ChatCompletion,
   OutgoingResponse,
   StreamEvent,
-  ToolCallDelta,
   KeyRecord,
 } from "../shared/protocol.js";
 import { getKey, getActiveKey } from "./keyStore.js";
 import { getBinding, touchBindingUsage } from "./bindingStore.js";
-import { buildProviderFetch, parseAnthropicCompletion } from "./providerFetch.js";
+import {
+  buildProviderFetch,
+  parseAnthropicCompletion,
+  parseOpenAiResponsesCompletion,
+  sanitizeErrorText,
+  isResponsesFallbackSignal,
+} from "./providerFetch.js";
+import {
+  parseOpenAiStreamEvent,
+  parseOpenAiResponsesStreamEvent,
+  parseAnthropicStreamEvent,
+  parseOpenAiCompletion,
+} from "./streamParsers.js";
 
 // ── Key resolution ─────────────────────────────────────
 
@@ -84,7 +95,7 @@ export async function handleChatStream(
     label: keyRecord.label,
   });
 
-  const fetchParams = buildProviderFetch(keyRecord, request, true);
+  let fetchParams = buildProviderFetch(keyRecord, request, true);
 
   let response: Response;
   try {
@@ -100,6 +111,47 @@ export async function handleChatStream(
       message: `Could not reach provider: ${err instanceof Error ? err.message : "unknown"}`,
     });
     return;
+  }
+
+  // One-shot fallback: some OpenAI models (gpt-*-pro, o*-pro) only work on
+  // the Responses API and return 404 from /chat/completions. Retry once
+  // against /responses. The warning flags it so OPENAI_RESPONSES_ONLY can
+  // be updated to avoid the roundtrip next time.
+  if (
+    !response.ok &&
+    keyRecord.provider === "openai" &&
+    fetchParams.endpoint === "chat"
+  ) {
+    const errBody = await response.text().catch(() => "");
+    if (isResponsesFallbackSignal(response.status, errBody)) {
+      console.warn(
+        `[keyquill] model "${request.model ?? keyRecord.defaultModel}" rejected at /chat/completions; retrying on /responses. Consider adding it to OPENAI_RESPONSES_ONLY.`,
+      );
+      fetchParams = buildProviderFetch(keyRecord, request, true, {
+        forceEndpoint: "responses",
+      });
+      try {
+        response = await fetch(fetchParams.url, {
+          method: "POST",
+          headers: fetchParams.headers,
+          body: fetchParams.body,
+        });
+      } catch (err) {
+        sendEvent(port, {
+          type: "error",
+          code: "PROVIDER_UNREACHABLE",
+          message: `Could not reach provider: ${err instanceof Error ? err.message : "unknown"}`,
+        });
+        return;
+      }
+    } else {
+      sendEvent(port, {
+        type: "error",
+        code: "PROVIDER_ERROR",
+        message: `Provider returned ${response.status}: ${sanitizeErrorText(errBody.slice(0, 500))}`,
+      });
+      return;
+    }
   }
 
   if (!response.ok) {
@@ -124,7 +176,8 @@ export async function handleChatStream(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  const isAnthropic = keyRecord.provider === "anthropic";
+  const endpoint = fetchParams.endpoint;
+  let sawTerminalEvent = false;
 
   try {
     while (true) {
@@ -143,10 +196,12 @@ export async function handleChatStream(
         try {
           const data = JSON.parse(trimmed.slice(6));
 
-          if (isAnthropic) {
-            parseAnthropicStreamEvent(port, data);
+          if (endpoint === "anthropic") {
+            if (parseAnthropicStreamEvent(port, data)) sawTerminalEvent = true;
+          } else if (endpoint === "responses") {
+            if (parseOpenAiResponsesStreamEvent(port, data)) sawTerminalEvent = true;
           } else {
-            parseOpenAiStreamEvent(port, data);
+            if (parseOpenAiStreamEvent(port, data)) sawTerminalEvent = true;
           }
         } catch {
           // Skip malformed JSON lines
@@ -157,93 +212,8 @@ export async function handleChatStream(
     reader.releaseLock();
   }
 
-  sendEvent(port, { type: "done" });
-}
-
-// ── OpenAI SSE Parsing ─────────────────────────────────
-
-function parseOpenAiStreamEvent(port: chrome.runtime.Port, data: Record<string, unknown>): void {
-  const choices = data.choices as Array<Record<string, unknown>> | undefined;
-  if (!choices?.[0]) return;
-
-  const choice = choices[0];
-  const delta = choice.delta as Record<string, unknown> | undefined;
-
-  if (delta?.content) {
-    sendEvent(port, { type: "delta", text: delta.content as string });
-  }
-
-  if (delta?.tool_calls) {
-    sendEvent(port, {
-      type: "tool_call_delta",
-      tool_calls: delta.tool_calls as ToolCallDelta[],
-    });
-  }
-
-  if (choice.finish_reason) {
-    const usage = data.usage as Record<string, number> | undefined;
-    sendEvent(port, {
-      type: "done",
-      finish_reason: choice.finish_reason as ChatCompletion["finish_reason"],
-      usage: usage
-        ? { promptTokens: usage.prompt_tokens ?? 0, completionTokens: usage.completion_tokens ?? 0 }
-        : undefined,
-    });
-  }
-}
-
-// ── Anthropic SSE Parsing ──────────────────────────────
-
-function parseAnthropicStreamEvent(port: chrome.runtime.Port, data: Record<string, unknown>): void {
-  const eventType = data.type as string;
-
-  if (eventType === "content_block_delta") {
-    const delta = data.delta as Record<string, unknown>;
-    if (delta?.type === "text_delta") {
-      sendEvent(port, { type: "delta", text: delta.text as string });
-    }
-    if (delta?.type === "input_json_delta") {
-      sendEvent(port, {
-        type: "tool_call_delta",
-        tool_calls: [
-          {
-            index: data.index as number,
-            function: { arguments: delta.partial_json as string },
-          },
-        ],
-      });
-    }
-  }
-
-  if (eventType === "content_block_start") {
-    const block = data.content_block as Record<string, unknown>;
-    if (block?.type === "tool_use") {
-      sendEvent(port, {
-        type: "tool_call_delta",
-        tool_calls: [
-          {
-            index: data.index as number,
-            id: block.id as string,
-            type: "function",
-            function: { name: block.name as string, arguments: "" },
-          },
-        ],
-      });
-    }
-  }
-
-  if (eventType === "message_delta") {
-    const delta = data.delta as Record<string, unknown> | undefined;
-    const stopReason = delta?.stop_reason as string | undefined;
-    const finishReason = stopReason === "tool_use" ? ("tool_calls" as const) : ("stop" as const);
-    const usage = data.usage as Record<string, number> | undefined;
-    sendEvent(port, {
-      type: "done",
-      finish_reason: finishReason,
-      usage: usage
-        ? { promptTokens: usage.input_tokens ?? 0, completionTokens: usage.output_tokens ?? 0 }
-        : undefined,
-    });
+  if (!sawTerminalEvent) {
+    sendEvent(port, { type: "done" });
   }
 }
 
@@ -259,7 +229,7 @@ export async function handleChat(
     return { type: "error", code: "KEY_NOT_FOUND", message: "No Keyquill key available." };
   }
 
-  const fetchParams = buildProviderFetch(keyRecord, request, false);
+  let fetchParams = buildProviderFetch(keyRecord, request, false);
 
   let response: Response;
   try {
@@ -276,6 +246,41 @@ export async function handleChat(
     };
   }
 
+  if (
+    !response.ok &&
+    keyRecord.provider === "openai" &&
+    fetchParams.endpoint === "chat"
+  ) {
+    const errBody = await response.text().catch(() => "");
+    if (isResponsesFallbackSignal(response.status, errBody)) {
+      console.warn(
+        `[keyquill] model "${request.model ?? keyRecord.defaultModel}" rejected at /chat/completions; retrying on /responses. Consider adding it to OPENAI_RESPONSES_ONLY.`,
+      );
+      fetchParams = buildProviderFetch(keyRecord, request, false, {
+        forceEndpoint: "responses",
+      });
+      try {
+        response = await fetch(fetchParams.url, {
+          method: "POST",
+          headers: fetchParams.headers,
+          body: fetchParams.body,
+        });
+      } catch (err) {
+        return {
+          type: "error",
+          code: "PROVIDER_UNREACHABLE",
+          message: `Could not reach provider: ${err instanceof Error ? err.message : "unknown"}`,
+        };
+      }
+    } else {
+      return {
+        type: "error",
+        code: "PROVIDER_ERROR",
+        message: `Provider returned ${response.status}: ${sanitizeErrorText(errBody.slice(0, 500))}`,
+      };
+    }
+  }
+
   if (!response.ok) {
     const text = await response.text().catch(() => "unknown");
     return {
@@ -287,46 +292,22 @@ export async function handleChat(
 
   const data = (await response.json()) as Record<string, unknown>;
 
-  const completion =
-    keyRecord.provider === "anthropic"
-      ? parseAnthropicCompletion(data)
-      : parseOpenAiCompletion(data);
+  let completion: ChatCompletion;
+  switch (fetchParams.endpoint) {
+    case "anthropic":
+      completion = parseAnthropicCompletion(data);
+      break;
+    case "responses":
+      completion = parseOpenAiResponsesCompletion(data);
+      break;
+    default:
+      completion = parseOpenAiCompletion(data);
+  }
 
   return { type: "chatCompletion", completion, keyId: keyRecord.keyId };
 }
 
-function parseOpenAiCompletion(data: Record<string, unknown>): ChatCompletion {
-  const choices = data.choices as Array<Record<string, unknown>> | undefined;
-  const message = choices?.[0]?.message as Record<string, unknown> | undefined;
-  const usage = data.usage as Record<string, number> | undefined;
-
-  const result: ChatCompletion = {
-    content: (message?.content as string) ?? null,
-    finish_reason: (choices?.[0]?.finish_reason as ChatCompletion["finish_reason"]) ?? "stop",
-  };
-
-  if (message?.tool_calls) {
-    result.tool_calls = message.tool_calls as ChatCompletion["tool_calls"];
-  }
-
-  if (usage) {
-    result.usage = {
-      promptTokens: usage.prompt_tokens ?? 0,
-      completionTokens: usage.completion_tokens ?? 0,
-    };
-  }
-
-  return result;
-}
-
 // ── Helpers ────────────────────────────────────────────
-
-function sanitizeErrorText(text: string): string {
-  return text
-    .replace(/Bearer\s+[\w\-_.]+/gi, "Bearer [REDACTED]")
-    .replace(/\bsk-[A-Za-z0-9_-]{10,}/g, "[REDACTED]")
-    .replace(/\bkey-[A-Za-z0-9_-]{10,}/g, "[REDACTED]");
-}
 
 function sendEvent(port: chrome.runtime.Port, event: StreamEvent): void {
   try {

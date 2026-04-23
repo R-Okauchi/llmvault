@@ -35,7 +35,7 @@ import {
 } from "./bindingStore.js";
 import { requestConsent, handleConsentResponse } from "./consent.js";
 import { handleChatStream, handleChat } from "./streamManager.js";
-import { buildProviderFetch } from "./providerFetch.js";
+import { buildProviderTestFetch, sanitizeErrorText } from "./providerFetch.js";
 import { ext } from "../shared/browser.js";
 
 const VERSION = "0.2.0";
@@ -269,25 +269,36 @@ export async function handleMessage(
 
     case "testKey": {
       // testKey accepts internal (popup) and approved web origins.
+      // Probes GET /models (free, model-agnostic, no parameter constraints)
+      // — works for every preset provider including reasoning-only models
+      // like gpt-5-pro that don't accept /chat/completions.
       if (isInternal(sender) || (await requireGrantSilent(sender))) {
         const keyRecord = await getKey(request.keyId);
         if (!keyRecord) {
           return { type: "testResult", reachable: false };
         }
         try {
-          const params = buildProviderFetch(
-            keyRecord,
-            { messages: [{ role: "user", content: "hi" }], max_tokens: 1 },
-            false,
-          );
+          const params = buildProviderTestFetch(keyRecord);
           const res = await fetch(params.url, {
-            method: "POST",
+            method: params.method,
             headers: params.headers,
-            body: params.body,
           });
-          return { type: "testResult", reachable: res.ok };
-        } catch {
-          return { type: "testResult", reachable: false };
+          if (res.ok) {
+            return { type: "testResult", reachable: true, status: res.status };
+          }
+          const body = await res.text().catch(() => "");
+          return {
+            type: "testResult",
+            reachable: false,
+            status: res.status,
+            detail: sanitizeErrorText(body.slice(0, 200)),
+          };
+        } catch (err) {
+          return {
+            type: "testResult",
+            reachable: false,
+            detail: err instanceof Error ? err.message : "network error",
+          };
         }
       }
       return {

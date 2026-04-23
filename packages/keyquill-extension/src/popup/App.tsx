@@ -142,14 +142,19 @@ function App() {
     setTestResult("Testing...");
     const res = await sendMessage({ type: "testKey", keyId });
     if (res.type === "testResult") {
-      setTestResult(res.reachable ? "Connected ✓" : "Failed");
+      if (res.reachable) {
+        setTestResult("Connected ✓");
+      } else {
+        const suffix = [res.status, res.detail].filter(Boolean).join(" ");
+        setTestResult(suffix ? `Failed: ${suffix}` : "Failed");
+      }
     } else {
       setTestResult("Error");
     }
     setTimeout(() => {
       setTestResult(null);
       setTestResultKey(null);
-    }, 3000);
+    }, 6000);
   }
 
   async function handleSetBinding(origin: string, keyId: string) {
@@ -335,8 +340,20 @@ function App() {
                   <input
                     type="text"
                     value={formDefaultModel}
+                    list={`models-${formProvider}`}
+                    placeholder={
+                      getPreset(formProvider)?.defaultModel || "vendor-specific id"
+                    }
+                    autoComplete="off"
                     onInput={(e) => setFormDefaultModel((e.target as HTMLInputElement).value)}
                   />
+                  {(getPreset(formProvider)?.models.length ?? 0) > 0 && (
+                    <datalist id={`models-${formProvider}`}>
+                      {getPreset(formProvider)!.models.map((m) => (
+                        <option key={m} value={m} />
+                      ))}
+                    </datalist>
+                  )}
                 </label>
                 <label>
                   Temperature

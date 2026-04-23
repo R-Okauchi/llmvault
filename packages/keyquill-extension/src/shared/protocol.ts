@@ -220,7 +220,7 @@ export type OutgoingResponse =
   | { type: "connected"; origin: string }
   | { type: "keys"; keys: KeySummary[] }
   | { type: "ok" }
-  | { type: "testResult"; reachable: boolean }
+  | { type: "testResult"; reachable: boolean; status?: number; detail?: string }
   | { type: "chatCompletion"; completion: ChatCompletion; keyId: string }
   | { type: "bindings"; bindings: OriginBinding[] }
   | { type: "error"; code: string; message: string };

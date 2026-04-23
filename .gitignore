@@ -4,6 +4,7 @@ dist-chrome/
 dist-firefox/
 *.zip
 coverage/
+integration-report.json
 .DS_Store
 
 # Capacitor plugin build artifacts

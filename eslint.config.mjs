@@ -37,6 +37,24 @@ export default tseslint.config(
     },
   },
 
+  // Node scripts need process/console as globals and are allowed to use
+  // console.log for CI output.
+  {
+    files: ["scripts/**/*.mjs", "scripts/**/*.js"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        Buffer: "readonly",
+        __dirname: "readonly",
+        __filename: "readonly",
+      },
+    },
+    rules: {
+      "no-console": "off",
+    },
+  },
+
   // Disable formatting rules (Prettier handles formatting)
   eslintConfigPrettier,
 );

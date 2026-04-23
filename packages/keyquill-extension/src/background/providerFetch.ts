@@ -1,8 +1,15 @@
 /**
  * Builds provider-specific fetch parameters.
  *
- * OpenAI-compatible providers receive the request body as-is (passthrough).
- * Anthropic requests are translated from OpenAI format to Messages API.
+ * Three endpoint shapes are produced:
+ *   - Chat Completions  (OpenAI-compat passthrough): POST {baseUrl}/chat/completions
+ *   - Responses API     (OpenAI only, pro models):   POST {baseUrl}/responses
+ *   - Anthropic Messages:                            POST {baseUrl}/messages
+ *
+ * OpenAI `gpt-5-pro` / `o1-pro` / `o3-pro` ONLY work on the Responses API;
+ * hitting `/chat/completions` returns 404 with "This is not a chat model."
+ * The dispatch is gated on `provider.provider === "openai"` — other
+ * OpenAI-compatible providers never implement Responses.
  */
 
 import type { KeyRecord, ChatParams, ChatMessage, Tool } from "../shared/protocol.js";
@@ -11,6 +18,14 @@ export interface ProviderFetchParams {
   url: string;
   headers: Record<string, string>;
   body: string;
+  /** Which shape the caller should expect back when parsing the response. */
+  endpoint: "chat" | "responses" | "anthropic";
+}
+
+export interface ProviderTestFetchParams {
+  url: string;
+  headers: Record<string, string>;
+  method: "GET";
 }
 
 type ReasoningEffort = "minimal" | "low" | "medium" | "high";
@@ -32,6 +47,33 @@ export function isOpenAIReasoningModel(model: string): boolean {
   return /^(o\d+|gpt-5)/i.test(model);
 }
 
+/**
+ * OpenAI model patterns that ONLY work on the Responses API.
+ *
+ * When OpenAI ships a new `*-pro` model, add its pattern here AND to the
+ * integration test `TARGETS` so CI catches endpoint regressions. The
+ * runtime 404 fallback in streamManager.ts acts as a safety net and logs
+ * `console.warn` — treat that warning as a bug report against this table.
+ */
+const OPENAI_RESPONSES_ONLY: RegExp[] = [
+  /^gpt-5(\.\d+)?-pro(-.*)?$/i,
+  /^o1-pro(-.*)?$/i,
+  /^o3-pro(-.*)?$/i,
+];
+
+/**
+ * Which OpenAI endpoint shape does this (provider, model) pair need?
+ * Non-openai providers always use `/chat/completions` — no other
+ * OpenAI-compatible vendor implements the Responses API.
+ */
+export function selectOpenAIEndpoint(
+  provider: KeyRecord,
+  model: string,
+): "chat" | "responses" {
+  if (provider.provider !== "openai") return "chat";
+  return OPENAI_RESPONSES_ONLY.some((re) => re.test(model)) ? "responses" : "chat";
+}
+
 interface NormalizedParams {
   model: string;
   messages: ChatMessage[];
@@ -44,6 +86,8 @@ interface NormalizedParams {
   tool_choice?: ChatParams["tool_choice"];
   response_format?: ChatParams["response_format"];
   reasoning_effort?: ReasoningEffort;
+  /** True iff caller explicitly set temperature (vs. inherited from key defaults). */
+  temperatureExplicit: boolean;
 }
 
 /**
@@ -76,24 +120,66 @@ export function normalizeParams(
     ...(request.tool_choice !== undefined && { tool_choice: request.tool_choice }),
     ...(request.response_format && { response_format: request.response_format }),
     ...(reasoningEffort !== undefined && { reasoning_effort: reasoningEffort }),
+    temperatureExplicit: request.temperature !== undefined,
   };
+}
+
+export interface BuildOptions {
+  /**
+   * Override the auto-selected endpoint. Used by the fallback path when
+   * /chat/completions returns 404 "not a chat model" — the caller retries
+   * once with `forceEndpoint: "responses"` rather than re-running the
+   * model matcher.
+   */
+  forceEndpoint?: "chat" | "responses";
 }
 
 export function buildProviderFetch(
   provider: KeyRecord,
   request: ChatParams & { maxTokens?: number },
   stream: boolean,
+  opts: BuildOptions = {},
 ): ProviderFetchParams {
   const params = normalizeParams(request, provider);
 
   if (provider.provider === "anthropic") {
     return buildAnthropicFetch(provider, params, stream);
   }
-  // All other providers: OpenAI-compatible passthrough
+
+  const endpoint = opts.forceEndpoint ?? selectOpenAIEndpoint(provider, params.model);
+  if (endpoint === "responses") {
+    return buildOpenAiResponses(provider, params, stream);
+  }
   return buildOpenAiPassthrough(provider, params, stream);
 }
 
-// ── OpenAI Passthrough ─────────────────────────────────
+// ── Provider reachability test (used by popup Test button) ────────
+
+/**
+ * Builds a minimal GET request against `/models` for credential validation.
+ * Free, model-agnostic, no parameter constraints — works for every preset
+ * (OpenAI-compat and Anthropic both expose `GET /v1/models`).
+ */
+export function buildProviderTestFetch(provider: KeyRecord): ProviderTestFetchParams {
+  const url = `${provider.baseUrl.replace(/\/+$/, "")}/models`;
+  if (provider.provider === "anthropic") {
+    return {
+      url,
+      method: "GET",
+      headers: {
+        "x-api-key": provider.apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+    };
+  }
+  return {
+    url,
+    method: "GET",
+    headers: { Authorization: `Bearer ${provider.apiKey}` },
+  };
+}
+
+// ── OpenAI Chat Completions Passthrough ─────────────────
 
 function buildOpenAiPassthrough(
   provider: KeyRecord,
@@ -127,12 +213,130 @@ function buildOpenAiPassthrough(
 
   return {
     url,
+    endpoint: "chat",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${provider.apiKey}`,
     },
     body: JSON.stringify(body),
   };
+}
+
+// ── OpenAI Responses API (gpt-5-pro, o1-pro, o3-pro) ────
+
+function buildOpenAiResponses(
+  provider: KeyRecord,
+  params: NormalizedParams,
+  stream: boolean,
+): ProviderFetchParams {
+  const url = `${provider.baseUrl.replace(/\/+$/, "")}/responses`;
+
+  const input = convertMessagesToResponsesInput(params.messages);
+
+  const body: Record<string, unknown> = {
+    model: params.model,
+    input,
+    max_output_tokens: params.max_completion_tokens ?? params.max_tokens,
+    stream,
+  };
+
+  // Responses API reasoning models reject temperature ≠ 1. Omit any
+  // inherited/default temperature unless caller explicitly set it to 1.
+  // This defends against a common failure mode where per-key
+  // `defaults.temperature = 0.7` silently breaks pro model requests.
+  if (params.temperatureExplicit && params.temperature === 1) {
+    body.temperature = 1;
+  }
+  if (params.top_p !== undefined) body.top_p = params.top_p;
+
+  if (params.reasoning_effort) {
+    body.reasoning = { effort: params.reasoning_effort };
+  }
+  if (params.tools) {
+    // Responses API uses flat `{type:"function", name, description, parameters}` tools
+    // rather than the nested `{type:"function", function:{...}}` shape of Chat Completions.
+    body.tools = params.tools.map((t) => ({
+      type: "function",
+      name: t.function.name,
+      ...(t.function.description && { description: t.function.description }),
+      parameters: t.function.parameters ?? { type: "object" },
+      ...(t.function.strict !== undefined && { strict: t.function.strict }),
+    }));
+  }
+  if (params.tool_choice !== undefined) body.tool_choice = params.tool_choice;
+  if (params.response_format) {
+    // Responses API nests format under `text`.
+    body.text = { format: params.response_format };
+  }
+
+  return {
+    url,
+    endpoint: "responses",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${provider.apiKey}`,
+    },
+    body: JSON.stringify(body),
+  };
+}
+
+function convertMessagesToResponsesInput(messages: ChatMessage[]): Array<Record<string, unknown>> {
+  const input: Array<Record<string, unknown>> = [];
+  for (const msg of messages) {
+    switch (msg.role) {
+      case "system":
+        input.push({
+          role: "system",
+          content: [{ type: "input_text", text: msg.content }],
+        });
+        break;
+      case "user": {
+        if (typeof msg.content === "string") {
+          input.push({
+            role: "user",
+            content: [{ type: "input_text", text: msg.content }],
+          });
+        } else {
+          input.push({
+            role: "user",
+            content: msg.content.map((part) =>
+              part.type === "text"
+                ? { type: "input_text", text: part.text }
+                : { type: "input_image", image_url: part.image_url.url },
+            ),
+          });
+        }
+        break;
+      }
+      case "assistant": {
+        if (msg.content) {
+          input.push({
+            role: "assistant",
+            content: [{ type: "output_text", text: msg.content }],
+          });
+        }
+        if (msg.tool_calls) {
+          for (const tc of msg.tool_calls) {
+            input.push({
+              type: "function_call",
+              call_id: tc.id,
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            });
+          }
+        }
+        break;
+      }
+      case "tool":
+        input.push({
+          type: "function_call_output",
+          call_id: msg.tool_call_id,
+          output: msg.content,
+        });
+        break;
+    }
+  }
+  return input;
 }
 
 // ── Reasoning effort → Anthropic thinking budget ───────
@@ -193,6 +397,7 @@ function buildAnthropicFetch(
 
   return {
     url,
+    endpoint: "anthropic",
     headers: {
       "Content-Type": "application/json",
       "x-api-key": provider.apiKey,
@@ -328,4 +533,96 @@ export function parseAnthropicCompletion(data: Record<string, unknown>): {
       },
     }),
   };
+}
+
+// ── OpenAI Responses Parsing (non-streaming) ───────────
+
+/**
+ * Parse an OpenAI Responses API non-streaming response into the same
+ * ChatCompletion shape that `parseOpenAiCompletion` produces, so
+ * downstream code can stay endpoint-agnostic.
+ */
+export function parseOpenAiResponsesCompletion(data: Record<string, unknown>): {
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+  finish_reason: "stop" | "tool_calls" | "length" | "content_filter";
+  usage?: { promptTokens: number; completionTokens: number };
+} {
+  const output = (data.output ?? []) as Array<Record<string, unknown>>;
+  let textContent = "";
+  const toolCalls: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }> = [];
+
+  for (const item of output) {
+    if (item.type === "message") {
+      const parts = (item.content ?? []) as Array<Record<string, unknown>>;
+      for (const part of parts) {
+        if (part.type === "output_text" && typeof part.text === "string") {
+          textContent += part.text;
+        }
+      }
+    } else if (item.type === "function_call") {
+      toolCalls.push({
+        id: (item.call_id as string) ?? (item.id as string),
+        type: "function",
+        function: {
+          name: item.name as string,
+          arguments: (item.arguments as string) ?? "",
+        },
+      });
+    }
+  }
+
+  let finishReason: "stop" | "tool_calls" | "length" | "content_filter" = "stop";
+  if (toolCalls.length > 0) {
+    finishReason = "tool_calls";
+  } else if (data.status === "incomplete") {
+    const reason = (data.incomplete_details as { reason?: string } | undefined)?.reason;
+    finishReason = reason === "content_filter" ? "content_filter" : "length";
+  }
+
+  const usage = data.usage as Record<string, number> | undefined;
+
+  return {
+    content: textContent || null,
+    ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
+    finish_reason: finishReason,
+    ...(usage && {
+      usage: {
+        promptTokens: usage.input_tokens ?? 0,
+        completionTokens: usage.output_tokens ?? 0,
+      },
+    }),
+  };
+}
+
+// ── Error text sanitization ────────────────────────────
+
+/**
+ * Redact credential-shaped substrings from provider error bodies before
+ * they surface to the UI. Preserves the provider's semantic error text
+ * (endpoint/model errors) so users can debug without leaking keys.
+ */
+export function sanitizeErrorText(text: string): string {
+  return text
+    .replace(/Bearer\s+[\w\-_.]+/gi, "Bearer [REDACTED]")
+    .replace(/\bsk-[A-Za-z0-9_-]{10,}/g, "[REDACTED]")
+    .replace(/\bkey-[A-Za-z0-9_-]{10,}/g, "[REDACTED]");
+}
+
+/**
+ * Heuristic for the "model doesn't support /chat/completions" 404 that
+ * OpenAI returns for pro models. Used by streamManager.ts to trigger a
+ * one-shot retry against the Responses API.
+ */
+export function isResponsesFallbackSignal(status: number, body: string): boolean {
+  if (status !== 404) return false;
+  return /not a chat model/i.test(body) || /v1\/responses/i.test(body);
 }

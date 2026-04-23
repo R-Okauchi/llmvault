@@ -12,7 +12,9 @@
     "build:firefox": "BROWSER_TARGET=firefox vite build",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run --passWithNoTests 'src/background/__tests__/providerFetch.integration.test.ts'",
+    "test:all": "vitest run --passWithNoTests",
     "zip:chrome": "pnpm build && cd dist-chrome && zip -r ../keyquill-extension-chrome.zip . -x '*.DS_Store' -x '__MACOSX*'",
     "zip:firefox": "pnpm build:firefox && cd dist-firefox && zip -r ../keyquill-extension-firefox.zip . -x '*.DS_Store' -x '__MACOSX*'",
     "sign:firefox": "web-ext sign --source-dir=dist-firefox --api-key=$WEB_EXT_API_KEY --api-secret=$WEB_EXT_API_SECRET --channel=listed"

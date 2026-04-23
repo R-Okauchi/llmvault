@@ -78,6 +78,38 @@ OpenAI, Anthropic, Gemini, Groq, Mistral, DeepSeek, Together AI, Fireworks, xAI,
 
 Full policy: [docs/privacy-policy.md](../../docs/privacy-policy.md).
 
+## Testing
+
+Three tiers; pick based on what you're iterating on.
+
+```bash
+# 1. Unit tests + mock-server fallback test (fast, no network, runs on every PR)
+pnpm --filter keyquill-extension test
+
+# 2. Live-API matrix — gated per provider by env var. Missing keys just skip.
+export OPENAI_API_KEY=sk-... ANTHROPIC_API_KEY=sk-ant-...
+pnpm --filter keyquill-extension test:integration
+
+# 3. Everything (unit + integration, same vitest run)
+pnpm --filter keyquill-extension test:all
+```
+
+`test:integration` exercises `GET /models`, a non-streaming chat, and a
+streaming chat for every catalogued model in
+[integrationTargets.ts](./src/background/__tests__/integrationTargets.ts).
+A full matrix run is well under $0.05 at April 2026 rates — prompts are
+single-line, output capped at 32 tokens.
+
+**Adding a new provider preset?** Update `INTEGRATION_TARGETS` as well —
+a unit-level coverage guard fails CI if you don't.
+
+**GitHub CI.** The `check` job runs tier 1 on every PR. A separate
+`integration` workflow runs tier 2 nightly + on push-to-main, reading
+API keys from an `integration` GitHub Environment scoped to `main`. Fork
+PRs never see secrets — the workflow has no `pull_request` trigger.
+The job summary renders a provider × model × mode matrix so a red cell
+pins regressions to one combination.
+
 ## Store submission
 
 See [SUBMISSION.md](./SUBMISSION.md).

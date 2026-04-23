@@ -14,6 +14,7 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:integration": "pnpm --filter keyquill-extension test:integration",
     "changeset": "changeset",
     "ci:version": "changeset version && pnpm install --lockfile-only",
     "ci:release": "pnpm -r build && changeset publish"
