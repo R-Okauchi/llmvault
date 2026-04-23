@@ -40,7 +40,9 @@ import {
   handleConsentResponse,
   handleRequestConsentResponse,
 } from "./consent.js";
-import { handleChatStream, handleChat } from "./streamManager.js";
+import { handleChatStream, handleChat, resolveKey, toResolverRequest } from "./streamManager.js";
+import { resolveRequest } from "./resolver.js";
+import { toPlanPreview } from "./planPreview.js";
 import { buildProviderTestFetch, sanitizeErrorText } from "./providerFetch.js";
 import { ext } from "../shared/browser.js";
 
@@ -402,6 +404,30 @@ export async function handleMessage(
       return await handleChat(request, gate.origin);
     }
 
+    case "previewPlan": {
+      const gate = await requireGrant(sender);
+      if ("type" in gate) return gate;
+      const keyRecord = await resolveKey(request, gate.origin);
+      if (!keyRecord) {
+        return {
+          type: "error",
+          code: "KEY_NOT_FOUND",
+          message: "No Keyquill key available. Open the extension popup to add one.",
+        };
+      }
+      // `stream: false` — resolver builds a plan but the preview handler
+      // never issues the fetch, so the flag's only surface effect is on
+      // the request body shape (ignored here).
+      const resolverRequest = toResolverRequest(request, false);
+      const result = await resolveRequest({
+        request: resolverRequest,
+        origin: gate.origin,
+        key: keyRecord,
+      });
+      const preview = toPlanPreview(result, keyRecord.keyId, keyRecord.provider);
+      return { type: "planPreview", preview };
+    }
+
     default:
       return {
         type: "error",
@@ -418,6 +444,7 @@ async function requireGrantSilent(
   if (!origin) return false;
   return await hasGrant(origin);
 }
+
 
 /**
  * Handle a Port connection for streaming.

@@ -216,6 +216,98 @@ describe("Keyquill v2 SDK", () => {
     });
   });
 
+  describe("preview", () => {
+    it("sends a previewPlan request and unwraps the ready preview", async () => {
+      const promise = vault.preview({
+        messages: [{ role: "user" as const, content: "Hi" }],
+        requires: ["reasoning"],
+        tone: "precise",
+      });
+
+      await vi.waitFor(() => expect(postedMessages.length).toBe(1));
+      expect((postedMessages[0].payload as { type: string }).type).toBe("previewPlan");
+      expect((postedMessages[0].payload as { tone: string }).tone).toBe("precise");
+
+      simulateResponse({
+        type: "planPreview",
+        preview: {
+          kind: "ready",
+          keyId: "k1",
+          provider: "openai",
+          model: {
+            id: "gpt-5.4-pro",
+            displayName: "GPT-5.4 Pro",
+            capabilities: ["reasoning", "long_context"],
+            releaseStage: "stable",
+          },
+          estimatedCostUSD: 0.012,
+          estimatedTokens: { input: 42, output: 512 },
+          selectionReason: "capability-match",
+        },
+      });
+
+      const result = await promise;
+      expect(result.kind).toBe("ready");
+      if (result.kind !== "ready") throw new Error("expected ready");
+      expect(result.model.id).toBe("gpt-5.4-pro");
+      expect(result.estimatedCostUSD).toBeCloseTo(0.012);
+      expect(result.selectionReason).toBe("capability-match");
+    });
+
+    it("surfaces consent-required outcomes without throwing", async () => {
+      const promise = vault.preview({
+        messages: [{ role: "user" as const, content: "Hi" }],
+        prefer: { model: "gpt-5.4-pro" },
+      });
+
+      await vi.waitFor(() => expect(postedMessages.length).toBe(1));
+      simulateResponse({
+        type: "planPreview",
+        preview: {
+          kind: "consent-required",
+          reason: "model-outside-allowlist",
+          message: 'Model "gpt-5.4-pro" is not in the allowlist.',
+        },
+      });
+
+      const result = await promise;
+      expect(result.kind).toBe("consent-required");
+      if (result.kind !== "consent-required") throw new Error("expected consent-required");
+      expect(result.reason).toBe("model-outside-allowlist");
+    });
+
+    it("surfaces rejected outcomes without throwing", async () => {
+      const promise = vault.preview({
+        messages: [{ role: "user" as const, content: "Hi" }],
+        requires: ["audio"],
+      });
+
+      await vi.waitFor(() => expect(postedMessages.length).toBe(1));
+      simulateResponse({
+        type: "planPreview",
+        preview: {
+          kind: "rejected",
+          reason: "no-model-matches-capabilities",
+          message: "No allowed model satisfies the required capabilities.",
+        },
+      });
+
+      const result = await promise;
+      expect(result.kind).toBe("rejected");
+    });
+
+    it("throws on error response", async () => {
+      const promise = vault.preview({
+        messages: [{ role: "user" as const, content: "Hi" }],
+      });
+
+      await vi.waitFor(() => expect(postedMessages.length).toBe(1));
+      simulateResponse({ type: "error", code: "KEY_NOT_FOUND", message: "No key" });
+
+      await expect(promise).rejects.toThrow("No key");
+    });
+  });
+
   describe("chatStream", () => {
     it("yields start event plus stream events via relay", async () => {
       const events: unknown[] = [];

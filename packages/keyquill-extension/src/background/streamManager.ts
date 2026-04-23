@@ -72,7 +72,7 @@ export async function resolveKey(
  * accept both SDK v1 (frozen at keyquill@0.3.x) and SDK v2 (keyquill@1.x)
  * clients simultaneously.
  */
-function toResolverRequest(
+export function toResolverRequest(
   params: ChatParams & { maxTokens?: number },
   stream: boolean,
 ): ResolverRequest {

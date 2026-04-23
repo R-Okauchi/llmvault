@@ -142,11 +142,11 @@ export type RejectReason =
   | "capability-only-requires-developer-capabilities"
   | "capability-only-no-preferred-model";
 
-export type ConsentReason =
-  | "model-outside-allowlist"
-  | "model-in-denylist"
-  | "high-cost"
-  | "capability-missing";
+// Re-export the shared wire definition so existing resolver imports keep
+// working; `ConsentReason` itself lives in shared/protocol.ts so the SDK
+// can consume it without pulling in background modules.
+export type { ConsentReason } from "../shared/protocol.js";
+import type { ConsentReason } from "../shared/protocol.js";
 
 export interface ConsentContext {
   origin: string;

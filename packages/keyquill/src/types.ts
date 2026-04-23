@@ -183,13 +183,18 @@ export interface ChatStreamRequest extends ChatParams {
   type: "chatStream";
 }
 
+export interface PreviewPlanRequest extends ChatParams {
+  type: "previewPlan";
+}
+
 export type VaultRequest =
   | { type: "ping" }
   | { type: "connect" }
   | { type: "disconnect" }
   | { type: "listKeys" }
   | { type: "testKey"; keyId: string }
-  | ChatRequest;
+  | ChatRequest
+  | PreviewPlanRequest;
 
 // ── Response Messages ─────────────────────────────────
 
@@ -207,7 +212,61 @@ export type VaultResponse =
   | { type: "ok" }
   | { type: "testResult"; reachable: boolean; status?: number; detail?: string }
   | { type: "chatCompletion"; completion: ChatCompletion; keyId: string }
+  | { type: "planPreview"; preview: PlanPreview }
   | { type: "error"; code: string; message: string };
+
+// ── Plan preview (dry-run resolver) ───────────────────
+
+export type ConsentReason =
+  | "model-outside-allowlist"
+  | "model-in-denylist"
+  | "high-cost"
+  | "capability-missing";
+
+/**
+ * Subset of the internal ModelSpec that's safe to surface to a web page.
+ * Omits endpoint / pricing / constraints — those are broker-internal.
+ */
+export interface PlanPreviewModel {
+  id: string;
+  displayName: string;
+  capabilities: readonly Capability[];
+  releaseStage: "stable" | "preview" | "deprecated";
+}
+
+/**
+ * Outcome of `vault.preview(params)` — a dry-run of the resolver that
+ * does NOT issue a provider fetch or open a consent popup.
+ *
+ * - `ready`            — the request would execute
+ * - `consent-required` — would trigger a user confirmation popup
+ * - `rejected`         — would be blocked by policy or budget
+ */
+export type PlanPreview =
+  | {
+      kind: "ready";
+      keyId: string;
+      provider: string;
+      model: PlanPreviewModel;
+      estimatedCostUSD: number;
+      estimatedTokens: { input: number; output: number };
+      selectionReason:
+        | "default"
+        | "explicit"
+        | "capability-match"
+        | "preferred-per-capability";
+    }
+  | {
+      kind: "consent-required";
+      reason: ConsentReason;
+      message: string;
+      proposedModel?: PlanPreviewModel;
+    }
+  | {
+      kind: "rejected";
+      reason: string;
+      message: string;
+    };
 
 // ── Stream Events ─────────────────────────────────────
 
