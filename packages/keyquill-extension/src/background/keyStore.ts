@@ -16,7 +16,15 @@
  * - Not synced across devices
  */
 
-import type { KeyRecord, KeySummary, KeyDefaults } from "../shared/protocol.js";
+import type {
+  KeyRecord,
+  KeySummary,
+  KeyDefaults,
+  KeyPolicy,
+  SamplingPolicy,
+  ReasoningEffort,
+} from "../shared/protocol.js";
+import { DEFAULT_KEY_POLICY, CURRENT_POLICY_VERSION } from "../shared/protocol.js";
 import { ext } from "../shared/browser.js";
 import { removeBindingsForKey } from "./bindingStore.js";
 
@@ -94,21 +102,66 @@ function coerceV2Records(rows: LegacyV2Record[]): KeyRecord[] {
   }));
 }
 
+/**
+ * Synthesize a KeyPolicy from a record's legacy KeyDefaults.
+ *
+ * - Sampling (temperature, topP) moves into `policy.sampling`
+ * - reasoningEffort becomes an upper cap via `policy.budget.maxReasoningEffort`
+ * - Every other policy field stays at its permissive default
+ *
+ * Result is equivalent to pre-v1.0 unrestricted pass-through: nothing
+ * blocks, sampling defaults are honored when the developer omits them.
+ */
+function synthesizePolicy(defaults: KeyDefaults | undefined): KeyPolicy {
+  const sampling: { temperature?: number; topP?: number } = {};
+  if (defaults?.temperature !== undefined) sampling.temperature = defaults.temperature;
+  if (defaults?.topP !== undefined) sampling.topP = defaults.topP;
+
+  return {
+    ...DEFAULT_KEY_POLICY,
+    ...(Object.keys(sampling).length > 0 ? { sampling } : {}),
+    ...(defaults?.reasoningEffort
+      ? {
+          budget: {
+            ...DEFAULT_KEY_POLICY.budget,
+            maxReasoningEffort: defaults.reasoningEffort,
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Ensure a record has a `policy` field. Returns the same object reference
+ * if it already does; otherwise returns a new object with policy
+ * synthesized from the legacy `defaults`.
+ */
+function ensurePolicy(record: KeyRecord): KeyRecord {
+  if (record.policy && typeof record.policyVersion === "number") return record;
+  return {
+    ...record,
+    policy: synthesizePolicy(record.defaults),
+    policyVersion: CURRENT_POLICY_VERSION,
+  };
+}
+
 async function migrateV1IfNeeded(): Promise<KeyRecord[] | null> {
   const legacy = await ext.storage.session.get(LEGACY_V1_KEY);
   const rows = legacy[LEGACY_V1_KEY];
   if (!Array.isArray(rows) || rows.length === 0) return null;
-  const migrated: KeyRecord[] = (rows as LegacyV1Record[]).map((r, i) => ({
-    keyId: crypto.randomUUID(),
-    provider: r.provider,
-    label: r.label ?? r.provider,
-    apiKey: r.apiKey,
-    baseUrl: r.baseUrl,
-    defaultModel: r.defaultModel,
-    isActive: i === 0, // first legacy entry becomes the wallet active
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-  }));
+  const migrated: KeyRecord[] = (rows as LegacyV1Record[]).map((r, i) =>
+    ensurePolicy({
+      keyId: crypto.randomUUID(),
+      provider: r.provider,
+      label: r.label ?? r.provider,
+      apiKey: r.apiKey,
+      baseUrl: r.baseUrl,
+      defaultModel: r.defaultModel,
+      isActive: i === 0, // first legacy entry becomes the wallet active
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }),
+  );
   await ext.storage.session.set({ [STORAGE_KEY]: migrated });
   await ext.storage.session.remove(LEGACY_V1_KEY);
   return migrated;
@@ -118,16 +171,22 @@ export async function getKeys(): Promise<KeyRecord[]> {
   const data = await ext.storage.session.get(STORAGE_KEY);
   const rows = data[STORAGE_KEY];
   if (Array.isArray(rows)) {
-    // If any row lacks isActive (v2), rewrite the storage with coerced v3.
+    // v2 → v3: isActive coercion.
     const needsCoerce = (rows as LegacyV2Record[]).every(
       (r) => typeof r.isActive !== "boolean",
     );
-    if (needsCoerce && rows.length > 0) {
-      const coerced = coerceV2Records(rows as LegacyV2Record[]);
-      await ext.storage.session.set({ [STORAGE_KEY]: coerced });
-      return coerced;
+    const afterV3 = needsCoerce && rows.length > 0
+      ? coerceV2Records(rows as LegacyV2Record[])
+      : (rows as KeyRecord[]);
+
+    // Policy migration: synthesize `policy` from legacy `defaults` on any
+    // record that lacks one. Writes back only if anything changed.
+    const withPolicy = afterV3.map(ensurePolicy);
+    const policyChanged = withPolicy.some((r, i) => r !== afterV3[i]);
+    if (needsCoerce || policyChanged) {
+      await ext.storage.session.set({ [STORAGE_KEY]: withPolicy });
     }
-    return rows as KeyRecord[];
+    return withPolicy;
   }
   const migrated = await migrateV1IfNeeded();
   return migrated ?? [];
@@ -143,6 +202,8 @@ export async function getKeySummaries(): Promise<KeySummary[]> {
     defaultModel: r.defaultModel,
     isActive: Boolean(r.isActive),
     ...(r.defaults ? { defaults: r.defaults } : {}),
+    ...(r.policy ? { policy: r.policy } : {}),
+    ...(r.policyVersion !== undefined ? { policyVersion: r.policyVersion } : {}),
     keyHint: maskKey(r.apiKey),
     status: "active" as const,
     createdAt: r.createdAt,
@@ -182,7 +243,7 @@ export async function addKey(input: AddKeyInput): Promise<KeyRecord> {
   const records = await getKeys();
   const now = Date.now();
   const shouldActivate = input.isActive ?? records.length === 0;
-  const newRecord: KeyRecord = {
+  const newRecord: KeyRecord = ensurePolicy({
     keyId: crypto.randomUUID(),
     provider: input.provider,
     label: input.label.trim(),
@@ -195,7 +256,7 @@ export async function addKey(input: AddKeyInput): Promise<KeyRecord> {
       : {}),
     createdAt: now,
     updatedAt: now,
-  };
+  });
   let next = [...records, newRecord];
   if (shouldActivate) {
     next = next.map((r) =>
@@ -245,6 +306,29 @@ export async function updateKey(input: UpdateKeyInput): Promise<KeyRecord | null
   // Strip `defaults` entirely when cleared.
   if (!mergedDefaults) {
     delete (updated as { defaults?: KeyDefaults }).defaults;
+  }
+  // Sync derived policy fields (sampling + reasoning effort cap) whenever
+  // defaults change. Other policy fields (modelPolicy, budget caps,
+  // privacy) are user-owned and preserved — once the popup Policy tab
+  // lands in Phase 7, users edit those directly, not via defaults.
+  if (input.defaults !== undefined) {
+    const resynthesized = synthesizePolicy(mergedDefaults);
+    updated.policy = {
+      ...(existing.policy ?? DEFAULT_KEY_POLICY),
+      sampling: resynthesized.sampling,
+      budget: {
+        ...(existing.policy?.budget ?? DEFAULT_KEY_POLICY.budget),
+        ...(resynthesized.budget.maxReasoningEffort !== undefined
+          ? { maxReasoningEffort: resynthesized.budget.maxReasoningEffort }
+          : { maxReasoningEffort: undefined }),
+      },
+    };
+    // Strip undefined sampling so shape stays minimal.
+    if (!updated.policy.sampling) delete (updated.policy as { sampling?: SamplingPolicy }).sampling;
+    if (updated.policy.budget.maxReasoningEffort === undefined) {
+      delete (updated.policy.budget as { maxReasoningEffort?: ReasoningEffort }).maxReasoningEffort;
+    }
+    updated.policyVersion = CURRENT_POLICY_VERSION;
   }
   if (updated.label.length === 0) {
     throw new Error("label cannot be empty");

@@ -330,4 +330,171 @@ describe("keyStore v3 (active-key model)", () => {
       expect(keys[1].isActive).toBe(false);
     });
   });
+
+  describe("policy migration (Phase 3)", () => {
+    it("synthesizes a default policy for a new record with no defaults", async () => {
+      await addKey({
+        provider: "openai",
+        label: "Work",
+        apiKey: "sk-w",
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-5.4-mini",
+      });
+      const keys = await getKeys();
+      expect(keys[0].policy).toBeDefined();
+      expect(keys[0].policy?.modelPolicy.mode).toBe("open");
+      expect(keys[0].policy?.budget.onBudgetHit).toBe("warn");
+      expect(keys[0].policy?.privacy.requireHttps).toBe(true);
+      expect(keys[0].policy?.behavior.autoFallback).toBe(true);
+      expect(keys[0].policy?.sampling).toBeUndefined();
+      expect(keys[0].policyVersion).toBe(1);
+    });
+
+    it("maps KeyDefaults.temperature → policy.sampling.temperature", async () => {
+      await addKey({
+        provider: "openai",
+        label: "Work",
+        apiKey: "sk-w",
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-4o",
+        defaults: { temperature: 0.3, topP: 0.9 },
+      });
+      const keys = await getKeys();
+      expect(keys[0].policy?.sampling).toEqual({ temperature: 0.3, topP: 0.9 });
+    });
+
+    it("maps KeyDefaults.reasoningEffort → policy.budget.maxReasoningEffort", async () => {
+      await addKey({
+        provider: "openai",
+        label: "Work",
+        apiKey: "sk-w",
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-5.4-pro",
+        defaults: { reasoningEffort: "medium" },
+      });
+      const keys = await getKeys();
+      expect(keys[0].policy?.budget.maxReasoningEffort).toBe("medium");
+    });
+
+    it("backfills policy on legacy records (pre-policy storage read)", async () => {
+      // Pretend storage was written by a pre-Phase-3 build: defaults, no policy.
+      storage["keyquill_keys"] = [
+        {
+          keyId: "legacy-1",
+          provider: "openai",
+          label: "Legacy",
+          apiKey: "sk-old",
+          baseUrl: "https://api.openai.com/v1",
+          defaultModel: "gpt-4o",
+          isActive: true,
+          defaults: { temperature: 0.7, reasoningEffort: "high" },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ];
+      const keys = await getKeys();
+      expect(keys[0].policy).toBeDefined();
+      expect(keys[0].policy?.sampling?.temperature).toBe(0.7);
+      expect(keys[0].policy?.budget.maxReasoningEffort).toBe("high");
+      expect(keys[0].policyVersion).toBe(1);
+      // Storage should be rewritten with policy in place so subsequent
+      // reads don't re-synthesize.
+      const persisted = (storage["keyquill_keys"] as Array<{ policy?: unknown }>)[0];
+      expect(persisted.policy).toBeDefined();
+    });
+
+    it("preserves an existing policy instead of overwriting on read", async () => {
+      storage["keyquill_keys"] = [
+        {
+          keyId: "k1",
+          provider: "openai",
+          label: "Custom",
+          apiKey: "sk-k1",
+          baseUrl: "https://api.openai.com/v1",
+          defaultModel: "gpt-4o",
+          isActive: true,
+          policy: {
+            modelPolicy: { mode: "allowlist", allowedModels: ["gpt-4o"], onViolation: "reject" },
+            budget: { monthlyBudgetUSD: 5, onBudgetHit: "block" },
+            privacy: { requireHttps: true, logAuditEvents: true },
+            behavior: { autoFallback: false, maxRetries: 0, timeoutMs: 30_000 },
+          },
+          policyVersion: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ];
+      const keys = await getKeys();
+      expect(keys[0].policy?.modelPolicy.mode).toBe("allowlist");
+      expect(keys[0].policy?.budget.monthlyBudgetUSD).toBe(5);
+      expect(keys[0].policy?.behavior.autoFallback).toBe(false);
+    });
+
+    it("updateKey re-syncs policy.sampling when defaults change", async () => {
+      const k = await addKey({
+        provider: "openai",
+        label: "Work",
+        apiKey: "sk-w",
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-4o",
+        defaults: { temperature: 0.5 },
+      });
+      await updateKey({ keyId: k.keyId, defaults: { temperature: 0.9, topP: 0.5 } });
+      const after = await getKeys();
+      expect(after[0].policy?.sampling).toEqual({ temperature: 0.9, topP: 0.5 });
+    });
+
+    it("updateKey clears policy.sampling when every default is set undefined", async () => {
+      const k = await addKey({
+        provider: "openai",
+        label: "Work",
+        apiKey: "sk-w",
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-4o",
+        defaults: { temperature: 0.5 },
+      });
+      // updateKey treats input.defaults as a shallow merge; explicitly
+      // setting a key to undefined strips it. To clear all sampling,
+      // undefine each field.
+      await updateKey({
+        keyId: k.keyId,
+        defaults: { temperature: undefined, topP: undefined, reasoningEffort: undefined },
+      });
+      const after = await getKeys();
+      expect(after[0].policy?.sampling).toBeUndefined();
+    });
+
+    it("updateKey preserves user-edited modelPolicy even when defaults change", async () => {
+      // Seed a record that has both defaults AND a custom modelPolicy.
+      storage["keyquill_keys"] = [
+        {
+          keyId: "k1",
+          provider: "openai",
+          label: "Custom",
+          apiKey: "sk-k1",
+          baseUrl: "https://api.openai.com/v1",
+          defaultModel: "gpt-4o",
+          isActive: true,
+          defaults: { temperature: 0.5 },
+          policy: {
+            modelPolicy: { mode: "allowlist", allowedModels: ["gpt-4o"], onViolation: "reject" },
+            budget: { onBudgetHit: "warn" },
+            privacy: { requireHttps: true, logAuditEvents: true },
+            sampling: { temperature: 0.5 },
+            behavior: { autoFallback: true, maxRetries: 2, timeoutMs: 60_000 },
+          },
+          policyVersion: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ];
+      await updateKey({ keyId: "k1", defaults: { temperature: 0.9 } });
+      const after = await getKeys();
+      // sampling updated…
+      expect(after[0].policy?.sampling?.temperature).toBe(0.9);
+      // …but modelPolicy.mode preserved.
+      expect(after[0].policy?.modelPolicy.mode).toBe("allowlist");
+      expect(after[0].policy?.modelPolicy.allowedModels).toEqual(["gpt-4o"]);
+    });
+  });
 });

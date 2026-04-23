@@ -5,6 +5,11 @@
  * Wire protocol follows OpenAI Chat Completions format.
  */
 
+// Re-export the catalog's Capability enum so protocol consumers (SDK v2,
+// popup, resolver) have a single import source.
+export type { Capability } from "./modelCatalog.js";
+import type { Capability } from "./modelCatalog.js";
+
 // ── OpenAI-Compatible Message Types ────────────────────
 
 export interface TextContentPart {
@@ -76,14 +81,112 @@ export const PROTOCOL_VERSION = 3;
  * `keyId` is the stable identifier used by SDK and bindings to reference
  * a specific credential.
  */
+
+/**
+ * @deprecated since policyVersion 1. Use KeyPolicy.sampling +
+ * KeyPolicy.budget.maxReasoningEffort. Kept on the record for migration
+ * back-compat; the broker resolver reads from `policy` starting Phase 6.
+ */
 export interface KeyDefaults {
   /** Sampling temperature 0.0 - 2.0. Omit to let the provider pick. */
   temperature?: number;
   /** Nucleus sampling 0.0 - 1.0. */
   topP?: number;
   /** Reasoning model effort level. Translated per-provider at fetch time. */
-  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  reasoningEffort?: ReasoningEffort;
 }
+
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+
+// ── Key Policy (v1.0 broker) ───────────────────────────
+
+/**
+ * A key's policy — the set of rules the broker enforces when this key
+ * services a request. Policy is user-owned: developers declare intent via
+ * ChatParams, the broker clamps / routes / confirms against policy.
+ *
+ * A newly-added key starts with the permissive default
+ * (`DEFAULT_KEY_POLICY`) — equivalent to today's unrestricted pass-through.
+ * Users opt into stricter enforcement via the popup Policy tab (Phase 7).
+ */
+export interface KeyPolicy {
+  modelPolicy: ModelPolicy;
+  budget: BudgetPolicy;
+  privacy: PrivacyPolicy;
+  /** Developer-side sampling defaults applied when ChatParams omits them. */
+  sampling?: SamplingPolicy;
+  behavior: BehaviorPolicy;
+}
+
+export interface ModelPolicy {
+  /**
+   * - open: developer's `model` / `requires` wins, no user gate
+   * - allowlist: developer's request must resolve to a model in allowedModels
+   * - denylist: developer's request may resolve to anything EXCEPT deniedModels
+   * - capability-only: developer cannot specify `model`; user maps
+   *   capabilities to preferred models via `preferredPerCapability`
+   */
+  mode: "open" | "allowlist" | "denylist" | "capability-only";
+  allowedModels?: string[];
+  deniedModels?: string[];
+  /** "When the dev needs `reasoning`, use `claude-sonnet-4-6`." */
+  preferredPerCapability?: Partial<Record<Capability, string>>;
+  /** What the broker does if the developer's request violates the mode. */
+  onViolation: "reject" | "confirm";
+}
+
+export interface BudgetPolicy {
+  maxTokensPerRequest?: number;
+  maxCostPerRequestUSD?: number;
+  dailyBudgetUSD?: number;
+  monthlyBudgetUSD?: number;
+  /** Enum-ordered cap: clamp dev's reasoning_effort to at most this level. */
+  maxReasoningEffort?: ReasoningEffort;
+  /** What the broker does when a request would exceed budget. */
+  onBudgetHit: "block" | "confirm" | "warn";
+}
+
+export interface PrivacyPolicy {
+  /** undefined = all providers permitted for this key. */
+  allowedProviders?: string[];
+  /** Regex pattern (stringified) matched against `origin`. undefined = any. */
+  allowedOriginsRegex?: string;
+  /** Reject requests whose baseUrl is not HTTPS (except localhost for dev). */
+  requireHttps: boolean;
+  /** Whether to record every request to the audit ledger. */
+  logAuditEvents: boolean;
+}
+
+export interface SamplingPolicy {
+  temperature?: number;
+  topP?: number;
+}
+
+export interface BehaviorPolicy {
+  /**
+   * Allow the 404→/responses heuristic fallback when a model isn't in the
+   * catalog. Turn off for strict environments that prefer failing closed.
+   */
+  autoFallback: boolean;
+  /** Retry budget for transient provider errors (429 / 5xx). */
+  maxRetries: number;
+  /** Hard timeout for a single provider request. */
+  timeoutMs: number;
+}
+
+/**
+ * Permissive default applied to newly-added keys and during migration from
+ * legacy `KeyDefaults`. Equivalent to pre-1.0 unrestricted pass-through.
+ */
+export const DEFAULT_KEY_POLICY: KeyPolicy = {
+  modelPolicy: { mode: "open", onViolation: "confirm" },
+  budget: { onBudgetHit: "warn" },
+  privacy: { requireHttps: true, logAuditEvents: true },
+  behavior: { autoFallback: true, maxRetries: 2, timeoutMs: 60_000 },
+};
+
+/** Policy schema version. Bumped whenever KeyPolicy shape changes. */
+export const CURRENT_POLICY_VERSION = 1;
 
 export interface KeyRecord {
   keyId: string;           // UUID v4, immutable
@@ -93,7 +196,12 @@ export interface KeyRecord {
   baseUrl: string;
   defaultModel: string;
   isActive?: boolean;      // invariant: at most one key across the wallet is true
-  defaults?: KeyDefaults;  // per-key generation defaults merged by the request handler
+  /** @deprecated see KeyDefaults. Migrated into `policy` on read. */
+  defaults?: KeyDefaults;
+  /** v1.0 policy. Populated on read via migration for legacy records. */
+  policy?: KeyPolicy;
+  /** Schema version of `policy`. Populated when `policy` is set. */
+  policyVersion?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -108,7 +216,10 @@ export interface KeySummary {
   baseUrl: string;
   defaultModel: string;
   isActive: boolean;
+  /** @deprecated migrated into `policy.sampling` + `policy.budget.maxReasoningEffort`. */
   defaults?: KeyDefaults;
+  policy?: KeyPolicy;
+  policyVersion?: number;
   keyHint: string | null;   // "sk-t...st12" mask, null if unavailable
   status: "active" | "error";
   createdAt: number;
