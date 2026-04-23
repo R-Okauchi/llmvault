@@ -251,10 +251,10 @@ describe("Keyquill v2 SDK", () => {
       expect(events[3]).toEqual(expect.objectContaining({ type: "done", finish_reason: "stop" }));
     });
 
-    it("passes keyId + provider through to the port open payload", async () => {
+    it("passes keyId + prefer.provider through to the port open payload", async () => {
       const generator = vault.chatStream({
         keyId: "k2",
-        provider: "anthropic",
+        prefer: { provider: "anthropic" },
         messages: [{ role: "user" as const, content: "Hi" }],
       });
 
@@ -267,9 +267,9 @@ describe("Keyquill v2 SDK", () => {
       await vi.waitFor(() => postedMessages.some((m) => m.type === "keyquill-stream-open"));
       const open = postedMessages.find((m) => m.type === "keyquill-stream-open");
       expect(open).toBeDefined();
-      const payload = open!.payload as { keyId?: string; provider?: string };
+      const payload = open!.payload as { keyId?: string; prefer?: { provider?: string } };
       expect(payload.keyId).toBe("k2");
-      expect(payload.provider).toBe("anthropic");
+      expect(payload.prefer?.provider).toBe("anthropic");
 
       simulateStreamEvents([{ type: "done", finish_reason: "stop" }]);
       await consumePromise;

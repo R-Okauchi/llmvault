@@ -66,36 +66,51 @@ export async function resolveKey(
 // ── v1 ChatParams → ResolverRequest translator ─────────
 
 /**
- * Translate the legacy v1 ChatParams into the resolver's v2 ResolverRequest
- * shape. Mapping is purely syntactic — the resolver applies policy and
- * catalogue semantics after.
- *
- *   params.model                 → request.prefer.model
- *   params.max_completion_tokens → request.maxOutput (preferred)
- *   params.max_tokens            → request.maxOutput (fallback)
- *   params.temperature           → request.prefer.temperature
- *   params.top_p                 → request.prefer.topP
- *   params.reasoning_effort      → request.prefer.reasoningEffort
- *   params.tools/tool_choice/response_format → pass-through
+ * Translate wire-level ChatParams (either v1 or v2 shape) into the
+ * resolver's ResolverRequest. Prefers v2 fields when present, falls
+ * back to translating v1 snake_case fields otherwise. This lets us
+ * accept both SDK v1 (frozen at @keyquill@0.3.x) and SDK v2 (@keyquill@2)
+ * clients simultaneously.
  */
-function toResolverRequest(params: ChatParams & { maxTokens?: number }, stream: boolean): ResolverRequest {
-  const prefer: ResolverRequest["prefer"] = {};
-  if (params.model) prefer.model = params.model;
-  if (params.temperature !== undefined) prefer.temperature = params.temperature;
-  if (params.top_p !== undefined) prefer.topP = params.top_p;
-  if (params.reasoning_effort) prefer.reasoningEffort = params.reasoning_effort;
-
-  const maxOutput = params.max_completion_tokens ?? params.max_tokens ?? params.maxTokens;
-
+function toResolverRequest(
+  params: ChatParams & { maxTokens?: number },
+  stream: boolean,
+): ResolverRequest {
   const req: ResolverRequest = {
     messages: params.messages,
     stream,
   };
+
+  // v2 tools / toolChoice / responseFormat pass-through; fall back to v1
+  // equivalents if the client is still on the old SDK.
   if (params.tools) req.tools = params.tools;
-  if (params.tool_choice !== undefined) req.toolChoice = params.tool_choice;
-  if (params.response_format) req.responseFormat = params.response_format;
-  if (maxOutput !== undefined) req.maxOutput = maxOutput;
+  const toolChoice = params.toolChoice ?? params.tool_choice;
+  if (toolChoice !== undefined) req.toolChoice = toolChoice;
+  const responseFormat = params.responseFormat ?? params.response_format;
+  if (responseFormat) req.responseFormat = responseFormat;
+
+  // v2 requires / tone / maxOutput pass-through.
+  if (params.requires) req.requires = params.requires;
+  if (params.tone) req.tone = params.tone;
+
+  // v2 prefer (direct) > synthesized from v1 fields
+  const prefer: NonNullable<ResolverRequest["prefer"]> = { ...(params.prefer ?? {}) };
+  if (!prefer.model && params.model) prefer.model = params.model;
+  if (prefer.temperature === undefined && params.temperature !== undefined) {
+    prefer.temperature = params.temperature;
+  }
+  if (prefer.topP === undefined && params.top_p !== undefined) prefer.topP = params.top_p;
+  if (!prefer.reasoningEffort && params.reasoning_effort) {
+    prefer.reasoningEffort = params.reasoning_effort;
+  }
+  if (!prefer.provider && params.provider) prefer.provider = params.provider;
   if (Object.keys(prefer).length > 0) req.prefer = prefer;
+
+  // v2 maxOutput > v1 max_completion_tokens > v1 max_tokens > v1 maxTokens alias
+  const maxOutput =
+    params.maxOutput ?? params.max_completion_tokens ?? params.max_tokens ?? params.maxTokens;
+  if (maxOutput !== undefined) req.maxOutput = maxOutput;
+
   return req;
 }
 

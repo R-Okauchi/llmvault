@@ -242,33 +242,58 @@ export interface OriginBinding {
 
 // ── Request Parameters ─────────────────────────────────
 
+/**
+ * Wire-level ChatParams — the extension accepts BOTH v1 (legacy,
+ * snake_case, top-level `model`/`temperature`/...) and v2 (capability-first,
+ * camelCase, `requires`/`tone`/`maxOutput`/`prefer`). `toResolverRequest`
+ * in streamManager prefers v2 fields when present.
+ *
+ * SDK v1 (frozen on npm at @keyquill 0.x.x) sends only v1 fields.
+ * SDK v2 (@keyquill 2.x.x) sends only v2 fields.
+ */
 export interface ChatParams {
-  /** Explicit key selection, overrides all other resolution. */
   keyId?: string;
-  /** Provider hint; used to fall back to that provider's default key. */
-  provider?: string;
-  model?: string;
   messages: ChatMessage[];
-  max_tokens?: number;
-  /**
-   * OpenAI reasoning-model budget (shared between reasoning and completion).
-   * Treated as an alias for `max_tokens` by non-reasoning providers.
-   */
-  max_completion_tokens?: number;
-  temperature?: number;
-  top_p?: number;
-  stop?: string | string[];
   tools?: Tool[];
+
+  // ── v2 fields (capability-first) ──
+  requires?: Capability[];
+  tone?: Tone;
+  maxOutput?: number;
+  prefer?: {
+    model?: string;
+    provider?: string;
+    reasoningEffort?: ReasoningEffort;
+    temperature?: number;
+    topP?: number;
+  };
+  toolChoice?: ToolChoice;
+  responseFormat?: ResponseFormat;
+
+  // ── v1 legacy fields (snake_case) ──
+  /** @deprecated v2: use `prefer.model`. */
+  provider?: string;
+  /** @deprecated v2: use `prefer.model`. */
+  model?: string;
+  /** @deprecated v2: use `maxOutput`. */
+  max_tokens?: number;
+  /** @deprecated v2: use `maxOutput`. */
+  max_completion_tokens?: number;
+  /** @deprecated v2: use `prefer.temperature` or `tone`. */
+  temperature?: number;
+  /** @deprecated v2: use `prefer.topP`. */
+  top_p?: number;
+  /** @deprecated v2: no replacement in broker (rarely used). */
+  stop?: string | string[];
+  /** @deprecated v2: use `toolChoice`. */
   tool_choice?: ToolChoice;
+  /** @deprecated v2: use `responseFormat`. */
   response_format?: ResponseFormat;
-  /**
-   * Reasoning model effort level. Forwarded verbatim to OpenAI-compatible
-   * providers (OpenAI, Gemini OpenAI-compat, Groq reasoning, etc.) and
-   * translated to Anthropic's `thinking: { budget_tokens }` for the
-   * Anthropic Messages API.
-   */
-  reasoning_effort?: "minimal" | "low" | "medium" | "high";
+  /** @deprecated v2: use `prefer.reasoningEffort`. */
+  reasoning_effort?: ReasoningEffort;
 }
+
+export type Tone = "precise" | "balanced" | "creative";
 
 // ── Incoming Requests (page/popup → extension) ─────────
 

@@ -41,7 +41,11 @@ export type {
   ResponseFormat,
   // Key info
   KeySummary,
-  KeyDefaults,
+  KeyPolicySummary,
+  // Broker vocabulary
+  Capability,
+  Tone,
+  ReasoningEffort,
   // Request params
   ChatParams,
   ChatStreamParams,

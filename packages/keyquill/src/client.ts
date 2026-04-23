@@ -33,6 +33,7 @@ import type {
   VaultRequest,
   VaultResponse,
 } from "./types.js";
+export type { Capability, Tone, ReasoningEffort, ChatParams, ChatStreamParams } from "./types.js";
 import { ErrorCode, SDK_PROTOCOL_VERSION } from "./types.js";
 import { sendExtensionMessage, connectToExtension, detectExtensionId } from "./detect.js";
 import { portToStream } from "./stream.js";
@@ -164,9 +165,15 @@ export class Keyquill {
    * Test connectivity to the provider behind a specific stored key.
    * @param keyId stable keyId from `listKeys()`.
    */
-  async testKey(keyId: string): Promise<{ reachable: boolean }> {
+  async testKey(keyId: string): Promise<{ reachable: boolean; status?: number; detail?: string }> {
     const res = await this.send({ type: "testKey", keyId });
-    if (res.type === "testResult") return { reachable: res.reachable };
+    if (res.type === "testResult") {
+      return {
+        reachable: res.reachable,
+        ...(res.status !== undefined ? { status: res.status } : {}),
+        ...(res.detail !== undefined ? { detail: res.detail } : {}),
+      };
+    }
     return { reachable: false };
   }
 
@@ -175,14 +182,14 @@ export class Keyquill {
    * Returns the full response plus the `keyId` that serviced the call.
    *
    * @example
-   * const { completion, keyId } = await vault.chat({ messages });
+   * const { completion, keyId } = await vault.chat({
+   *   messages,
+   *   requires: ["tool_use"],
+   *   tone: "precise",
+   * });
    */
   async chat(params: ChatParams): Promise<{ completion: ChatCompletion; keyId: string }> {
-    const res = await this.send({
-      type: "chat",
-      ...params,
-      max_tokens: params.max_tokens ?? (params as ChatStreamParams).maxTokens,
-    });
+    const res = await this.send({ type: "chat", ...params });
     if (res.type === "chatCompletion") {
       return { completion: res.completion, keyId: res.keyId };
     }
@@ -195,6 +202,11 @@ export class Keyquill {
   /**
    * Stream a chat completion.
    * First event is `{ type: "start", keyId, provider, label }`.
+   *
+   * @example
+   * for await (const event of vault.chatStream({ messages })) {
+   *   if (event.type === "delta") process.stdout.write(event.text);
+   * }
    */
   async *chatStream(params: ChatStreamParams): AsyncGenerator<StreamEvent> {
     const id = await this.resolveExtensionId();
@@ -217,11 +229,7 @@ export class Keyquill {
       return;
     }
 
-    yield* portToStream(port, {
-      type: "chatStream",
-      ...params,
-      max_tokens: params.max_tokens ?? params.maxTokens,
-    });
+    yield* portToStream(port, { type: "chatStream", ...params });
   }
 
   // ── Private ──────────────────────────────────────

@@ -1,10 +1,32 @@
 /**
- * Message protocol between the Keyquill SDK and browser extension.
- * These types define the contract — both sides must agree on them.
+ * Keyquill SDK v2 — capability-first API.
  *
- * The wire protocol follows OpenAI Chat Completions format.
- * OpenAI-compatible providers receive requests as-is; Anthropic
- * requests are translated by the extension before forwarding.
+ * The SDK sends intent; the extension's broker picks a concrete model
+ * based on the user's KeyPolicy, enforces budget, and writes every
+ * request to an audit ledger. Developers don't pick models directly
+ * unless they opt into Tier 3 via `prefer.model`.
+ *
+ * Three ergonomic tiers:
+ *
+ *   Tier 1  zero-config           — extension uses the key's defaultModel
+ *     vault.chat({ messages })
+ *
+ *   Tier 2  capability-declared    — broker resolves best-fit model
+ *     vault.chat({
+ *       messages, tools,
+ *       requires: ["tool_use", "long_context"],
+ *       tone: "precise",
+ *       maxOutput: 2048,
+ *     })
+ *
+ *   Tier 3  full control           — explicit model / temperature etc.
+ *     vault.chat({
+ *       messages,
+ *       prefer: { model: "gpt-5.4-pro", temperature: 1, reasoningEffort: "high" },
+ *     })
+ *
+ * v1 (snake_case top-level `model`/`temperature`/`max_tokens`) is gone —
+ * use `prefer.*` instead. v1 users can pin `keyquill@0.3.x` indefinitely.
  */
 
 // ── OpenAI-Compatible Message Types ────────────────────
@@ -60,25 +82,42 @@ export type ResponseFormat =
   | { type: "json_object" }
   | { type: "json_schema"; json_schema: { name: string; schema: JsonSchema; strict?: boolean } };
 
-// ── Key Info ────────────────────────────────────────
+// ── Broker vocabulary ─────────────────────────────────
 
 /**
- * Per-key sampling defaults merged into each request by the extension.
- * Explicit `ChatParams` values always override these.
+ * Capabilities the app can require. The extension's broker picks a
+ * model that satisfies the set, subject to the user's KeyPolicy.
  */
-export interface KeyDefaults {
-  temperature?: number;
-  topP?: number;
-  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+export type Capability =
+  | "tool_use"
+  | "structured_output"
+  | "vision"
+  | "audio"
+  | "reasoning"
+  | "long_context"
+  | "streaming"
+  | "cache"
+  | "fast"
+  | "cheap"
+  | "multilingual"
+  | "code";
+
+export type Tone = "precise" | "balanced" | "creative";
+
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+
+// ── Key Info ──────────────────────────────────────────
+
+export interface KeyPolicySummary {
+  // Thin public view of the broker policy — deliberately does NOT expose
+  // rule details to untrusted web pages. Listed here so `KeySummary` can
+  // advertise what a site is allowed to do.
+  modelMode: "open" | "allowlist" | "denylist" | "capability-only";
+  hasBudget: boolean;
 }
 
 /**
- * Safe projection of a stored key. Returned by `listKeys()`.
- * Never includes the raw `apiKey`.
- *
- * `isActive` is the wallet-wide single flag: at most one KeySummary in
- * the returned array has `isActive: true`. When no keyId is passed and no
- * per-origin binding matches, the extension uses the active key.
+ * Safe projection of a stored key. `apiKey` is never exposed.
  */
 export interface KeySummary {
   keyId: string;
@@ -87,81 +126,50 @@ export interface KeySummary {
   baseUrl: string;
   defaultModel: string;
   isActive: boolean;
-  defaults?: KeyDefaults;
+  policy?: KeyPolicySummary;
   keyHint: string | null;
   status: "active" | "error";
   createdAt: number;
   updatedAt: number;
 }
 
-// ── Request Parameters ─────────────────────────────────
+// ── Request Parameters (v2, capability-first) ─────────
 
 export interface ChatParams {
-  /**
-   * Explicit key selection by stable id. Overrides all other resolution.
-   * The extension returns `KEY_NOT_FOUND` if this key doesn't exist in the
-   * user's wallet.
-   */
-  keyId?: string;
-
-  /**
-   * Provider hint (e.g. "openai", "anthropic"). Advisory only in v3 —
-   * the extension resolves by keyId → per-origin binding → active key,
-   * in that order. A site that must use a specific provider should pass
-   * the `keyId` of a matching key.
-   *
-   * @deprecated since v3: no longer drives key selection. Kept for
-   * backward compatibility with v2 callers.
-   */
-  provider?: string;
-
-  model?: string;
   messages: ChatMessage[];
-
-  // Generation parameters
-  max_tokens?: number;
-  /**
-   * OpenAI reasoning-model budget (shared between reasoning and completion).
-   * Treated as an alias for `max_tokens` by non-reasoning providers.
-   */
-  max_completion_tokens?: number;
-  temperature?: number;
-  top_p?: number;
-  stop?: string | string[];
-
-  /**
-   * Reasoning effort for models that support it (OpenAI o-series / GPT-5
-   * reasoning, Gemini 2.5+ thinking, Groq reasoning models). Forwarded
-   * verbatim to OpenAI-compatible providers and translated to
-   * `thinking: { budget_tokens }` for Anthropic's Messages API.
-   */
-  reasoning_effort?: "minimal" | "low" | "medium" | "high";
-
-  // Tool calling
   tools?: Tool[];
-  tool_choice?: ToolChoice;
+  toolChoice?: ToolChoice;
+  responseFormat?: ResponseFormat;
 
-  // Structured output
-  response_format?: ResponseFormat;
+  /** Capabilities this request requires. Broker rejects if no allowed model satisfies. */
+  requires?: Capability[];
+  /** Behavioural abstraction over temperature. Broker maps per model family. */
+  tone?: Tone;
+  /** Output budget ceiling. Clamped by the key's policy.budget.maxTokensPerRequest. */
+  maxOutput?: number;
+  /** Tier-3 overrides — all optional. */
+  prefer?: {
+    model?: string;
+    provider?: string;
+    reasoningEffort?: ReasoningEffort;
+    temperature?: number;
+    topP?: number;
+  };
+
+  /** Explicit key selection, overrides all other resolution. */
+  keyId?: string;
 }
 
-export interface ChatStreamParams extends ChatParams {
-  /**
-   * @deprecated Use max_tokens instead.
-   */
-  maxTokens?: number;
-}
+export type ChatStreamParams = ChatParams;
 
 // ── Wire Requests ─────────────────────────────────────
 
-export interface ChatStreamRequest extends ChatParams {
-  type: "chatStream";
-  /** @deprecated */ maxTokens?: number;
-}
-
 export interface ChatRequest extends ChatParams {
   type: "chat";
-  /** @deprecated */ maxTokens?: number;
+}
+
+export interface ChatStreamRequest extends ChatParams {
+  type: "chatStream";
 }
 
 export type VaultRequest =
@@ -186,7 +194,7 @@ export type VaultResponse =
   | { type: "connected"; origin: string }
   | { type: "keys"; keys: KeySummary[] }
   | { type: "ok" }
-  | { type: "testResult"; reachable: boolean }
+  | { type: "testResult"; reachable: boolean; status?: number; detail?: string }
   | { type: "chatCompletion"; completion: ChatCompletion; keyId: string }
   | { type: "error"; code: string; message: string };
 
@@ -230,5 +238,9 @@ export const ErrorCode = {
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
-/** SDK's expected protocol version. Bumped on every breaking schema change. */
+/**
+ * SDK's expected wire-protocol version. Bumped on every breaking schema
+ * change. v2 SDK speaks to extensions that expose v3 or higher — v2
+ * introduced KeyPolicy, v3 is the current stable wire.
+ */
 export const SDK_PROTOCOL_VERSION = 3;
