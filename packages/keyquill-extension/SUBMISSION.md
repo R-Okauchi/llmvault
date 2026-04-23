@@ -4,13 +4,27 @@ Steps for publishing `keyquill-extension` to the Chrome Web Store and Firefox AM
 
 Listing copy (English + Japanese), privacy documents, and the promo tile all live under [`submission/`](./submission/) as drop-in assets. Screenshots go in [`submission/screenshots/`](./submission/screenshots/).
 
+## v1.0 release notes for reviewers
+
+The v1.0 release introduces substantial new user-visible features:
+
+- **Policy editor** in the popup: per-key allowlist / denylist / budget caps / privacy rules / sampling defaults
+- **Audit ledger**: every request stored locally (90-day retention) with origin, model, tokens, and cost. Export to CSV
+- **Consent popup** now has a request-approval mode (model / cost / reason with once / always / reject)
+- **Capability-first SDK** (`keyquill@2`) — apps declare intent, user policy picks the model
+- **Localized error messages** (English + Japanese, auto-detected from browser UI language)
+
+All storage continues to live in `chrome.storage.session` (keys, ephemeral) and `chrome.storage.local` (bindings + policy + ledger). Still no analytics, telemetry, or Keyquill-operated backend. The update flow from 0.3.x is non-destructive — legacy `KeyDefaults` migrate to `KeyPolicy` automatically on first read.
+
+Listing copy in `submission/{chrome,firefox}/` has been refreshed to reflect these additions. Screenshots for the new Policy tab, Audit panel, and request-approval consent popup should be regenerated before final submission (see the checklist below).
+
 ## Pre-submission checklist
 
 - [x] **Privacy policy URL live** — <https://r-okauchi.github.io/keyquill/privacy-policy>
 - [x] **Promo tile 440×280** — `submission/promo/tile-440x280.png` (regenerate via `npx @resvg/resvg-js-cli --fit-width 440 submission/promo/tile-440x280.svg submission/promo/tile-440x280.png`)
 - [x] **Listing copy drafted** — English + Japanese under `submission/chrome/` and `submission/firefox/`
 - [x] **Extension icons** — `public/icons/icon-{16,32,48,128}.png` (regenerate via `scripts/gen-icons.sh` from `public/icons/logo.svg`)
-- [ ] **Screenshots 1280×800 × 2-3** — capture into `submission/screenshots/` (see README inside)
+- [ ] **Screenshots 1280×800 × 2-3** — capture into `submission/screenshots/` (see README inside). For v1.0, include: Policy tab (Model / Budget sub-panes), Audit log panel, request-approval consent popup.
 - [ ] **Real logo** — current `public/icons/logo.svg` is a placeholder safe-dial. Replace before Public release if a branded logo is available.
 
 ## Firefox `gecko.id`

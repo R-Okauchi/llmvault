@@ -30,8 +30,26 @@ python3 -m http.server 8080 --directory docs
 
 ```html
 <script type="module">
-  import { Keyquill } from "https://esm.sh/keyquill@0.1.0";
+  import { Keyquill } from "https://esm.sh/keyquill@2";
 </script>
 ```
 
-We import directly from [esm.sh](https://esm.sh) so there's no build tooling. Pin the version explicitly; bump it when a new release lands.
+We import directly from [esm.sh](https://esm.sh) so there's no build tooling. Pinned to major version `@2` so patch/minor updates flow automatically while breaking majors require an intentional bump.
+
+## SDK v2 usage in this demo
+
+The chat call uses the v2 capability-first API: it declares behavioural intent (`tone`, `maxOutput`) rather than picking a concrete model. The extension's broker resolves the request against the user's KeyPolicy and records every call in the audit ledger.
+
+```js
+for await (const event of vault.chatStream({
+  messages: [{ role: "user", content: prompt }],
+  tone: "balanced",   // "precise" | "balanced" | "creative"
+  maxOutput: 512,     // output-token ceiling, clamped by user policy
+})) {
+  if (event.type === "start")
+    console.log(`[key: ${event.label} · ${event.provider}]`);
+  if (event.type === "delta") process.stdout.write(event.text);
+}
+```
+
+To see a consent popup in action, set an allowlist on your key (Policy tab in the extension popup) and then request a model outside it via `prefer: { model: "gpt-5.4-pro" }` — the broker will surface the popup with model / estimated cost / reason and the once/always/reject choice.

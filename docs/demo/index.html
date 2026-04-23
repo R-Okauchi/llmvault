@@ -123,7 +123,9 @@
       <header>
         <h1>Keyquill Demo</h1>
         <p class="subtitle">
-          Your API key stays in the extension. This page never sees it. No server, no logging.
+          Capability-first BYOK. Your API key stays in the extension — this page declares
+          <em>what</em> it wants (tone / max output), your policy picks the model, the audit
+          ledger records every call.
         </p>
         <div id="status">Checking for extension…</div>
       </header>
@@ -165,7 +167,7 @@
     </div>
 
     <script type="module">
-      import { Keyquill } from "https://esm.sh/keyquill@0.1.0";
+      import { Keyquill } from "https://esm.sh/keyquill@2";
 
       const vault = new Keyquill();
       const statusEl = document.querySelector("#status");
@@ -221,9 +223,18 @@
         sendBtn.disabled = true;
         output.textContent = "";
         try {
+          // v2 capability-first API: declare tone + output cap. The user's
+          // key policy picks the actual model, enforces budget, and records
+          // to the audit ledger. Change `tone` to "precise" for coding or
+          // "creative" for storytelling.
           for await (const event of vault.chatStream({
             messages: [{ role: "user", content: prompt }],
+            tone: "balanced",
+            maxOutput: 512,
           })) {
+            if (event.type === "start") {
+              output.textContent += `[key: ${event.label} · ${event.provider}]\n\n`;
+            }
             if (event.type === "delta") output.textContent += event.text;
             if (event.type === "error") {
               output.textContent += `\n[error] ${event.message}`;

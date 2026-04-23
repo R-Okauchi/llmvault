@@ -25,6 +25,18 @@ SECURITY PROPERTIES
 • The extension does not collect analytics, telemetry, or logs. Zero network calls other than to the LLM provider you chose.
 • The extension opens no persistent connections to any Keyquill-controlled servers. There is no Keyquill backend.
 
+WHAT'S NEW IN v1.0 — POLICY BROKER
+
+Every request is brokered through a user-owned policy before it reaches the provider:
+
+• Model policy: allowlist / denylist / capability-only modes. Decide which models web apps can use per key.
+• Budget caps: per-request, daily, and monthly USD ceilings. Choose to block, confirm, or warn when hit.
+• Privacy rules: HTTPS-only endpoints, provider allowlists, origin regex filters.
+• Capability-first API: the web app declares what it needs (tool use, reasoning, long context) — your policy picks the actual model. No more apps quietly upgrading to premium models without your knowledge.
+• Consent popups for policy edges: when a web app requests a model outside your allowlist or a high-cost request, a popup shows the breakdown (model, estimated cost, reason). You choose once / always / reject.
+• Audit ledger: every request recorded locally with timestamp, origin, model, token usage, estimated + actual cost. Filter by origin, export to CSV. 90-day retention.
+• Localized error messages (English / Japanese, auto-detected from browser UI language).
+
 SUPPORTED PROVIDERS
 
 Anything that speaks the OpenAI Chat Completions format works out of the box. Native translation is provided for the Anthropic Messages API.
@@ -33,7 +45,7 @@ Confirmed providers: OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek, 
 
 FOR DEVELOPERS
 
-Integrate Keyquill in your web app with the official SDK:
+Integrate Keyquill in your web app with the official SDK (v2 capability-first API):
 
     npm install keyquill
 
@@ -41,8 +53,15 @@ Integrate Keyquill in your web app with the official SDK:
     const vault = new Keyquill();
     if (await vault.isAvailable()) {
       await vault.connect();
-      const result = await vault.chat({ messages: [{ role: "user", content: "Hello" }] });
+      const { completion } = await vault.chat({
+        messages: [{ role: "user", content: "Hello" }],
+        requires: ["tool_use"],   // declare capabilities
+        tone: "precise",           // abstract over temperature
+        maxOutput: 1024,
+      });
     }
+
+Your app declares intent; the user's policy picks the concrete model. v1 SDK users can keep pinning keyquill@0.3.x — the extension accepts both wire shapes.
 
 Full docs: https://github.com/R-Okauchi/keyquill
 
