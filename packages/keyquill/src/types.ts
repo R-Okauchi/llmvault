@@ -196,12 +196,6 @@ export type KeyquillRequest =
   | ChatRequest
   | PreviewPlanRequest;
 
-/**
- * @deprecated renamed to `KeyquillRequest` — the `Vault` prefix is a
- * pre-rebrand artefact. Scheduled for removal in the next SDK major.
- */
-export type VaultRequest = KeyquillRequest;
-
 // ── Response Messages ─────────────────────────────────
 
 export interface ChatCompletion {
@@ -220,12 +214,6 @@ export type KeyquillResponse =
   | { type: "chatCompletion"; completion: ChatCompletion; keyId: string }
   | { type: "planPreview"; preview: PlanPreview }
   | { type: "error"; code: string; message: string };
-
-/**
- * @deprecated renamed to `KeyquillResponse` — the `Vault` prefix is a
- * pre-rebrand artefact. Scheduled for removal in the next SDK major.
- */
-export type VaultResponse = KeyquillResponse;
 
 // ── Plan preview (dry-run resolver) ───────────────────
 
