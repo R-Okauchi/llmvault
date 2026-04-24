@@ -63,10 +63,6 @@ export type {
   StreamEvent,
   // Wire umbrella types
   KeyquillRequest,
-  // Deprecated aliases — see `@deprecated` tags on the definitions in
-  // `types.ts`; scheduled for removal in the next SDK major.
-  VaultRequest,
-  VaultResponse,
 } from "./types.js";
 
 export { ErrorCode, SDK_PROTOCOL_VERSION } from "./types.js";

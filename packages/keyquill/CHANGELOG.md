@@ -13,7 +13,7 @@
   series; existing code reading `summary.defaultModel` keeps receiving the
   same resolver-chosen model it did before.
 
-- 8b021b6: Add `vault.preview(params)` — a dry-run of the resolver that returns what
+- 8b021b6: Add `quill.preview(params)` — a dry-run of the resolver that returns what
   model would service a given request, its estimated cost and token usage,
   and whether any consent prompts or policy rejections would fire. Does not
   issue a provider fetch or open a consent popup, so callers can surface
@@ -78,7 +78,7 @@
 
   ```ts
   // v1 (0.3.x — frozen, still on npm if you pin)
-  await vault.chat({
+  await quill.chat({
     messages,
     model: "gpt-5.4-pro",
     max_tokens: 2048,
@@ -87,7 +87,7 @@
   });
 
   // v2 (2.0.0)
-  await vault.chat({
+  await quill.chat({
     messages,
     // Option A: capability-declared (recommended)
     requires: ["reasoning", "long_context"],
@@ -290,10 +290,10 @@
   - All 65 tests + build + typecheck + lint green across 4 workspaces
 
   ## Consumer migration (travel-os etc.)
-  - `vault.listProviders()` removed → use `vault.listKeys()` (returns `KeySummary[]` with `keyId`, `label`, `isActive`)
-  - `vault.testKey(provider)` → `vault.testKey(keyId)`
-  - `vault.registerKey()` / `vault.deleteKey(provider)` removed from SDK (popup-only now)
-  - `vault.chat()` returns `{ completion, keyId }` instead of just ChatCompletion
+  - `quill.listProviders()` removed → use `quill.listKeys()` (returns `KeySummary[]` with `keyId`, `label`, `isActive`)
+  - `quill.testKey(provider)` → `quill.testKey(keyId)`
+  - `quill.registerKey()` / `quill.deleteKey(provider)` removed from SDK (popup-only now)
+  - `quill.chat()` returns `{ completion, keyId }` instead of just ChatCompletion
   - `chatStream()` emits a new first event `{ type: "start", keyId, provider, label }` — existing consumers can ignore or surface it
   - `ChatParams.keyId?` for explicit selection; `provider?` remains for back-compat but is advisory
 
