@@ -51,10 +51,10 @@ npm install keyquill
 
 ```js
 import { Keyquill } from "keyquill";
-const vault = new Keyquill();
-if (await vault.isAvailable()) {
-  await vault.connect();
-  const { completion } = await vault.chat({
+const quill = new Keyquill();
+if (await quill.isAvailable()) {
+  await quill.connect();
+  const { completion } = await quill.chat({
     messages: [{ role: "user", content: "Hello" }],
     requires: ["tool_use"],
     tone: "precise",

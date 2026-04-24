@@ -6,7 +6,7 @@ import type { ErrorCode } from "./codes.js";
  */
 export const ERRORS_JA: Record<ErrorCode, string> = {
   KEY_NOT_FOUND: "Keyquill キーが見つかりません。ポップアップからキーを追加してからもう一度お試しください。",
-  NOT_CONNECTED: "このサイトはまだ Keyquill に接続されていません。アプリ側で vault.connect() を呼んで接続を要求してください。",
+  NOT_CONNECTED: "このサイトはまだ Keyquill に接続されていません。アプリ側で Keyquill クライアントの connect() を呼んで接続を要求してください。",
   USER_DENIED: "接続リクエストを拒否しました。もう一度サイトを開いて、ポップアップで許可してください。",
   INVALID_KEY: "キーを保存できませんでした。API キーの値とベース URL を確認してください。",
   INVALID_REQUEST: "このサイトから未知の形式のリクエストを受け取りました。",

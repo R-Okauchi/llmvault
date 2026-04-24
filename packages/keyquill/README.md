@@ -53,12 +53,12 @@ npm install keyquill
 ```typescript
 import { Keyquill } from "keyquill";
 
-const vault = new Keyquill();
+const quill = new Keyquill();
 
-if (await vault.isAvailable()) {
-  if (!(await vault.isConnected())) {
+if (await quill.isAvailable()) {
+  if (!(await quill.isConnected())) {
     try {
-      await vault.connect();
+      await quill.connect();
     } catch (err) {
       // USER_DENIED / TIMEOUT — handle gracefully
       return;
@@ -67,7 +67,7 @@ if (await vault.isAvailable()) {
 
   // ── Tier 1: zero-config ──────────────────────────────
   // Uses the key's default model. Simplest possible chat.
-  const { completion } = await vault.chat({
+  const { completion } = await quill.chat({
     messages: [{ role: "user", content: "Hello!" }],
   });
   console.log(completion.content);
@@ -75,7 +75,7 @@ if (await vault.isAvailable()) {
   // ── Tier 2: capability-declared (recommended) ────────
   // The broker picks the best model in the user's allowlist that
   // satisfies every capability. `tone` abstracts over temperature.
-  for await (const event of vault.chatStream({
+  for await (const event of quill.chatStream({
     messages: [{ role: "user", content: "Debug this code..." }],
     requires: ["reasoning", "long_context"],
     tone: "precise",
@@ -85,7 +85,7 @@ if (await vault.isAvailable()) {
   }
 
   // Tool calling — `tool_use` is implied by passing `tools`.
-  const { completion: res } = await vault.chat({
+  const { completion: res } = await quill.chat({
     messages: [{ role: "user", content: "What's the weather in Tokyo?" }],
     tools: [
       {
@@ -108,7 +108,7 @@ if (await vault.isAvailable()) {
 
   // ── Tier 3: full control ─────────────────────────────
   // Pin the exact model + parameters.
-  const { completion: pro } = await vault.chat({
+  const { completion: pro } = await quill.chat({
     messages: [{ role: "user", content: "Prove the central limit theorem." }],
     prefer: {
       model: "gpt-5.4-pro",
@@ -118,7 +118,7 @@ if (await vault.isAvailable()) {
   });
 
   // Vision (multimodal) — `vision` is implied by an image ContentPart.
-  for await (const event of vault.chatStream({
+  for await (const event of quill.chatStream({
     messages: [
       {
         role: "user",
@@ -131,6 +131,18 @@ if (await vault.isAvailable()) {
     requires: ["vision"],
   })) {
     if (event.type === "delta") process.stdout.write(event.text);
+  }
+
+  // ── Preview: dry-run before committing (keyquill@1.1+) ───
+  // Tells you which model would run, the estimated cost, and whether a
+  // consent prompt would fire — without actually sending the request.
+  const plan = await quill.preview({
+    messages: [{ role: "user", content: "Long analysis prompt…" }],
+    requires: ["reasoning"],
+    tone: "precise",
+  });
+  if (plan.kind === "ready") {
+    console.log(`~$${plan.estimatedCostUSD.toFixed(4)} with ${plan.model.displayName}`);
   }
 }
 ```
@@ -152,16 +164,16 @@ Load the extension from `packages/keyquill-extension/dist/` in Chrome:
 | `extensionId` | `string` | auto-detect | Chrome extension ID                       |
 | `timeout`     | `number` | `5000`      | Timeout for non-streaming operations (ms) |
 
-### `vault.isAvailable(): Promise<boolean>`
+### `quill.isAvailable(): Promise<boolean>`
 
 Check if the extension is installed and responsive. Result is cached for 30 seconds.
 
-### `vault.isConnected(): Promise<boolean>`
+### `quill.isConnected(): Promise<boolean>`
 
 Check whether the current origin has an active consent grant. Call this before
 deciding whether to show a "Connect" button.
 
-### `vault.connect(timeoutMs?: number): Promise<void>`
+### `quill.connect(timeoutMs?: number): Promise<void>`
 
 Request permission for the current origin. Opens a consent popup the first time
 (60 second default timeout for user interaction). Resolves when the user approves,
@@ -170,42 +182,42 @@ instantly if the grant is already present.
 
 ```typescript
 try {
-  await vault.connect();
+  await quill.connect();
 } catch (err) {
   // User denied or timed out — show a "Try again" prompt
 }
 ```
 
-### `vault.disconnect(): Promise<void>`
+### `quill.disconnect(): Promise<void>`
 
 Revoke the current origin's grant. The user will be prompted again on the next
 `connect()` call.
 
-### `vault.listProviders(): Promise<ProviderSummary[]>`
+### `quill.listProviders(): Promise<ProviderSummary[]>`
 
 List registered providers. No key material is returned — only hints like `sk-t...st12`.
 Requires an active connection (call `connect()` first).
 
-### `vault.registerKey(provider, params): Promise<void>`
+### `quill.registerKey(provider, params): Promise<void>`
 
 > **Popup-only.** Calling this from a web page throws `BLOCKED`. API key
 > material must not travel through the web-page channel. Users register keys
 > via the extension popup (toolbar icon).
 
-### `vault.deleteKey(provider): Promise<void>`
+### `quill.deleteKey(provider): Promise<void>`
 
 > **Popup-only.** Same rationale as `registerKey`: a compromised origin should
 > not be able to wipe user keys. Users delete via the extension popup.
 
-### `vault.testKey(provider): Promise<{ reachable: boolean }>`
+### `quill.testKey(provider): Promise<{ reachable: boolean }>`
 
 Test connectivity to a provider.
 
-### `vault.chat(params): Promise<{ completion; keyId }>`
+### `quill.chat(params): Promise<{ completion; keyId }>`
 
 Non-streaming chat completion. Returns the full response plus the `keyId` that serviced it.
 
-### `vault.chatStream(params): AsyncGenerator<StreamEvent>`
+### `quill.chatStream(params): AsyncGenerator<StreamEvent>`
 
 Stream a chat completion. First event is always `{ type: "start", keyId, provider, label }` so callers can tell which key serviced the request.
 
@@ -221,6 +233,70 @@ type StreamEvent =
     }
   | { type: "error"; code: string; message: string };
 ```
+
+### `quill.preview(params): Promise<PlanPreview>`
+
+Dry-run the resolver. Returns the model that *would* service the request, its
+estimated cost, and whether a consent prompt or policy rejection would fire —
+without issuing a provider fetch or opening any popup. Useful for pre-flight
+UX: cost previews, "this will need approval" hints, or capability-fallback
+logic.
+
+```typescript
+const plan = await quill.preview({
+  messages: [{ role: "user", content: "Prove Fermat's Last Theorem." }],
+  requires: ["reasoning", "long_context"],
+  tone: "precise",
+});
+
+if (plan.kind === "ready") {
+  console.log(
+    `Would use ${plan.model.displayName} (${plan.model.releaseStage}); ` +
+      `~$${plan.estimatedCostUSD.toFixed(4)}, ` +
+      `${plan.estimatedTokens.output} output tokens.`,
+  );
+} else if (plan.kind === "consent-required") {
+  console.log(`Heads up — ${plan.message}`);
+} else {
+  console.error(`Would be rejected: ${plan.message}`);
+}
+```
+
+```typescript
+type PlanPreview =
+  | {
+      kind: "ready";
+      keyId: string;
+      provider: string;
+      model: {
+        id: string;
+        displayName: string;
+        capabilities: readonly Capability[];
+        releaseStage: "stable" | "preview" | "deprecated";
+      };
+      estimatedCostUSD: number;
+      estimatedTokens: { input: number; output: number };
+      selectionReason:
+        | "default"
+        | "explicit"
+        | "capability-match"
+        | "preferred-per-capability";
+    }
+  | {
+      kind: "consent-required";
+      reason:
+        | "model-outside-allowlist"
+        | "model-in-denylist"
+        | "high-cost"
+        | "capability-missing";
+      message: string;
+      proposedModel?: { id: string; displayName: string };
+    }
+  | { kind: "rejected"; reason: string; message: string };
+```
+
+Preview requires an active connection — a compromised origin cannot probe
+the user's policy without prior consent. Available since `keyquill@1.1.0`.
 
 ### ChatParams (shared by `chat` and `chatStream`)
 

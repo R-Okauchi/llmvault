@@ -41,7 +41,7 @@ We import directly from [esm.sh](https://esm.sh) so there's no build tooling. Pi
 The chat call uses the v2 capability-first API: it declares behavioural intent (`tone`, `maxOutput`) rather than picking a concrete model. The extension's broker resolves the request against the user's KeyPolicy and records every call in the audit ledger.
 
 ```js
-for await (const event of vault.chatStream({
+for await (const event of quill.chatStream({
   messages: [{ role: "user", content: prompt }],
   tone: "balanced",   // "precise" | "balanced" | "creative"
   maxOutput: 512,     // output-token ceiling, clamped by user policy

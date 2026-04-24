@@ -94,7 +94,7 @@ async function requireGrant(
     type: "error",
     code: "NOT_CONNECTED",
     message:
-      "This site is not connected to Keyquill. Call vault.connect() first.",
+      "This site is not connected to Keyquill. Call connect() on your Keyquill client first.",
   };
 }
 
@@ -384,7 +384,7 @@ export async function handleMessage(
         type: "error",
         code: "NOT_CONNECTED",
         message:
-          "This site is not connected to Keyquill. Call vault.connect() first.",
+          "This site is not connected to Keyquill. Call connect() on your Keyquill client first.",
       };
     }
 
@@ -466,7 +466,7 @@ export function handlePortConnect(port: chrome.runtime.Port): void {
           type: "error",
           code: "NOT_CONNECTED",
           message:
-            "This site is not connected to Keyquill. Call vault.connect() first.",
+            "This site is not connected to Keyquill. Call connect() on your Keyquill client first.",
         });
       } catch {
         // Port may already be disconnected

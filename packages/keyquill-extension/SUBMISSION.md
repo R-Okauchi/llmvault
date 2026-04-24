@@ -4,19 +4,42 @@ Steps for publishing `keyquill-extension` to the Chrome Web Store and Firefox AM
 
 Listing copy (English + Japanese), privacy documents, and the promo tile all live under [`submission/`](./submission/) as drop-in assets. Screenshots go in [`submission/screenshots/`](./submission/screenshots/).
 
-## v1.0 release notes for reviewers
+## v1.1 release notes for reviewers
 
-The v1.0 release introduces substantial new user-visible features:
+Iterative refinement on v1.0 (policy broker + audit ledger + consent UX).
+User-visible deltas:
+
+- **Default model lives in Policy, not the wallet record.** The popup's Policy
+  editor gains a "Default model" field with catalog autocomplete; the
+  add-key form shrinks to `provider / label / API key` for preset providers
+  (`custom` keeps its Base URL + Model inputs). Keys from v1.0 migrate on
+  first read — no data loss.
+- **`quill.preview(params)` in the SDK** (`keyquill@1.1.0`) — a dry-run of the
+  resolver that returns which model would run, estimated cost, and whether
+  any consent prompt or policy rejection would fire, without issuing a
+  provider fetch.
+
+No new permissions requested. No new remote endpoints. Storage stays in
+`chrome.storage.session` (keys, ephemeral) and `chrome.storage.local`
+(bindings + policy + ledger). Still no analytics, telemetry, or
+Keyquill-operated backend.
+
+### v1.0 baseline (unchanged from the last submission)
 
 - **Policy editor** in the popup: per-key allowlist / denylist / budget caps / privacy rules / sampling defaults
 - **Audit ledger**: every request stored locally (90-day retention) with origin, model, tokens, and cost. Export to CSV
-- **Consent popup** now has a request-approval mode (model / cost / reason with once / always / reject)
+- **Consent popup** in request-approval mode (model / cost / reason with once / always / reject)
 - **Capability-first SDK** (`keyquill@1.x`) — apps declare intent, user policy picks the model
 - **Localized error messages** (English + Japanese, auto-detected from browser UI language)
 
-All storage continues to live in `chrome.storage.session` (keys, ephemeral) and `chrome.storage.local` (bindings + policy + ledger). Still no analytics, telemetry, or Keyquill-operated backend. The update flow from 0.3.x is non-destructive — legacy `KeyDefaults` migrate to `KeyPolicy` automatically on first read.
+The update flow from 0.3.x remains non-destructive — legacy `KeyDefaults`
+and the pre-Phase-13d record-level `defaultModel` both migrate to
+`KeyPolicy` automatically on first read.
 
-Listing copy in `submission/{chrome,firefox}/` has been refreshed to reflect these additions. Screenshots for the new Policy tab, Audit panel, and request-approval consent popup should be regenerated before final submission (see the checklist below).
+Listing copy in `submission/{chrome,firefox}/` can largely be reused from
+the v1.0 submission. Screenshots do not need full regeneration for v1.1;
+only the Policy > Model tab layout changed (one new row: "Default model"
+with autocomplete).
 
 ## Pre-submission checklist
 

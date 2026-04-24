@@ -6,7 +6,7 @@ import type { ErrorCode } from "./codes.js";
  */
 export const ERRORS_EN: Record<ErrorCode, string> = {
   KEY_NOT_FOUND: "No Keyquill key is available for this request. Open the extension popup to add a key, then try again.",
-  NOT_CONNECTED: "This site isn't connected to Keyquill. The app should call vault.connect() to request access.",
+  NOT_CONNECTED: "This site isn't connected to Keyquill. The app should call connect() on its Keyquill client to request access.",
   USER_DENIED: "You denied the connection request. Reopen the site and approve the popup to try again.",
   INVALID_KEY: "The key couldn't be saved. Double-check the API key value and the base URL.",
   INVALID_REQUEST: "The extension received an unrecognized request from this site.",

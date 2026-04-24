@@ -9,10 +9,10 @@
  * ```typescript
  * import { Keyquill } from 'keyquill';
  *
- * const vault = new Keyquill();
+ * const quill = new Keyquill();
  *
- * if (await vault.isAvailable()) {
- *   for await (const event of vault.chatStream({
+ * if (await quill.isAvailable()) {
+ *   for await (const event of quill.chatStream({
  *     messages: [{ role: 'user', content: 'Hello!' }],
  *   })) {
  *     if (event.type === 'delta') process.stdout.write(event.text);
@@ -54,15 +54,19 @@ export type {
   PreviewPlanRequest,
   // Response types
   ChatCompletion,
-  VaultResponse,
+  KeyquillResponse,
   // Plan preview
   PlanPreview,
   PlanPreviewModel,
   ConsentReason,
   // Stream events
   StreamEvent,
-  // Wire types
+  // Wire umbrella types
+  KeyquillRequest,
+  // Deprecated aliases — see `@deprecated` tags on the definitions in
+  // `types.ts`; scheduled for removal in the next SDK major.
   VaultRequest,
+  VaultResponse,
 } from "./types.js";
 
 export { ErrorCode, SDK_PROTOCOL_VERSION } from "./types.js";

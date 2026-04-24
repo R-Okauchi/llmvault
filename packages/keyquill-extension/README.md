@@ -71,15 +71,15 @@ pnpm add keyquill
 ```typescript
 import { Keyquill } from "keyquill"; // v2 capability-first API
 
-const vault = new Keyquill();
+const quill = new Keyquill();
 
-if (await vault.isAvailable()) {
-  if (!(await vault.isConnected())) {
-    await vault.connect();  // opens consent popup
+if (await quill.isAvailable()) {
+  if (!(await quill.isConnected())) {
+    await quill.connect();  // opens consent popup
   }
 
   // Tier 2 — capability-declared (recommended)
-  const { completion } = await vault.chat({
+  const { completion } = await quill.chat({
     messages: [{ role: "user", content: "Hello" }],
     requires: ["tool_use"],
     tone: "precise",

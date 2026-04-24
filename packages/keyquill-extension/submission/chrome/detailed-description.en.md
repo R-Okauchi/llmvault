@@ -50,10 +50,10 @@ Integrate Keyquill in your web app with the official SDK (v2 capability-first AP
     npm install keyquill
 
     import { Keyquill } from "keyquill";
-    const vault = new Keyquill();
-    if (await vault.isAvailable()) {
-      await vault.connect();
-      const { completion } = await vault.chat({
+    const quill = new Keyquill();
+    if (await quill.isAvailable()) {
+      await quill.connect();
+      const { completion } = await quill.chat({
         messages: [{ role: "user", content: "Hello" }],
         requires: ["tool_use"],   // declare capabilities
         tone: "precise",           // abstract over temperature

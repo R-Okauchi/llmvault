@@ -22,10 +22,10 @@ pnpm add keyquill
 Install the Keyquill extension from the Chrome Web Store / Firefox AMO.
 ```typescript
 import { Keyquill } from "keyquill";
-const vault = new Keyquill();
-if (await vault.isAvailable()) {
-  await vault.connect();
-  const result = await vault.chat({ model: "gpt-4o", messages: [{ role: "user", content: "Hello" }] });
+const quill = new Keyquill();
+if (await quill.isAvailable()) {
+  await quill.connect();
+  const result = await quill.chat({ model: "gpt-4o", messages: [{ role: "user", content: "Hello" }] });
 }
 ```
 

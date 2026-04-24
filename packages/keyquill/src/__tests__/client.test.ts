@@ -78,23 +78,23 @@ function simulateStreamEvents(events: unknown[]): void {
 }
 
 describe("Keyquill v2 SDK", () => {
-  let vault: InstanceType<typeof Keyquill>;
+  let quill: InstanceType<typeof Keyquill>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     postedMessages.length = 0;
     handlers.length = 0;
     uuidCounter = 0;
-    vault = new Keyquill({ extensionId: "test-ext-id", timeout: 1000 });
+    quill = new Keyquill({ extensionId: "test-ext-id", timeout: 1000 });
   });
 
   afterEach(() => {
-    vault = null as unknown as InstanceType<typeof Keyquill>;
+    quill = null as unknown as InstanceType<typeof Keyquill>;
   });
 
   describe("isAvailable", () => {
     it("returns true when extension responds with pong", async () => {
-      const promise = vault.isAvailable();
+      const promise = quill.isAvailable();
 
       await vi.waitFor(() => expect(postedMessages.length).toBe(1));
       expect((postedMessages[0].payload as { type: string }).type).toBe("ping");
@@ -104,8 +104,8 @@ describe("Keyquill v2 SDK", () => {
     });
 
     it("returns false when extension does not respond", async () => {
-      vault = new Keyquill({ extensionId: "test-ext-id", timeout: 50 });
-      expect(await vault.isAvailable()).toBe(false);
+      quill = new Keyquill({ extensionId: "test-ext-id", timeout: 50 });
+      expect(await quill.isAvailable()).toBe(false);
     });
   });
 
@@ -138,7 +138,7 @@ describe("Keyquill v2 SDK", () => {
         },
       ];
 
-      const promise = vault.listKeys();
+      const promise = quill.listKeys();
 
       await vi.waitFor(() => expect(postedMessages.length).toBe(1));
       expect((postedMessages[0].payload as { type: string }).type).toBe("listKeys");
@@ -153,7 +153,7 @@ describe("Keyquill v2 SDK", () => {
 
   describe("testKey", () => {
     it("tests a specific key by keyId", async () => {
-      const promise = vault.testKey("key-uuid-123");
+      const promise = quill.testKey("key-uuid-123");
 
       await vi.waitFor(() => expect(postedMessages.length).toBe(1));
       expect(postedMessages[0].payload).toEqual({
@@ -174,7 +174,7 @@ describe("Keyquill v2 SDK", () => {
         usage: { promptTokens: 10, completionTokens: 5 },
       };
 
-      const promise = vault.chat({
+      const promise = quill.chat({
         messages: [{ role: "user" as const, content: "Hi" }],
       });
 
@@ -187,7 +187,7 @@ describe("Keyquill v2 SDK", () => {
     });
 
     it("forwards explicit keyId", async () => {
-      const promise = vault.chat({
+      const promise = quill.chat({
         keyId: "k2",
         messages: [{ role: "user" as const, content: "Hi" }],
       });
@@ -205,7 +205,7 @@ describe("Keyquill v2 SDK", () => {
     });
 
     it("throws on error response", async () => {
-      const promise = vault.chat({
+      const promise = quill.chat({
         messages: [{ role: "user" as const, content: "Hi" }],
       });
 
@@ -218,7 +218,7 @@ describe("Keyquill v2 SDK", () => {
 
   describe("preview", () => {
     it("sends a previewPlan request and unwraps the ready preview", async () => {
-      const promise = vault.preview({
+      const promise = quill.preview({
         messages: [{ role: "user" as const, content: "Hi" }],
         requires: ["reasoning"],
         tone: "precise",
@@ -255,7 +255,7 @@ describe("Keyquill v2 SDK", () => {
     });
 
     it("surfaces consent-required outcomes without throwing", async () => {
-      const promise = vault.preview({
+      const promise = quill.preview({
         messages: [{ role: "user" as const, content: "Hi" }],
         prefer: { model: "gpt-5.4-pro" },
       });
@@ -277,7 +277,7 @@ describe("Keyquill v2 SDK", () => {
     });
 
     it("surfaces rejected outcomes without throwing", async () => {
-      const promise = vault.preview({
+      const promise = quill.preview({
         messages: [{ role: "user" as const, content: "Hi" }],
         requires: ["audio"],
       });
@@ -297,7 +297,7 @@ describe("Keyquill v2 SDK", () => {
     });
 
     it("throws on error response", async () => {
-      const promise = vault.preview({
+      const promise = quill.preview({
         messages: [{ role: "user" as const, content: "Hi" }],
       });
 
@@ -311,7 +311,7 @@ describe("Keyquill v2 SDK", () => {
   describe("chatStream", () => {
     it("yields start event plus stream events via relay", async () => {
       const events: unknown[] = [];
-      const generator = vault.chatStream({
+      const generator = quill.chatStream({
         messages: [{ role: "user" as const, content: "Hi" }],
       });
 
@@ -344,7 +344,7 @@ describe("Keyquill v2 SDK", () => {
     });
 
     it("passes keyId + prefer.provider through to the port open payload", async () => {
-      const generator = vault.chatStream({
+      const generator = quill.chatStream({
         keyId: "k2",
         prefer: { provider: "anthropic" },
         messages: [{ role: "user" as const, content: "Hi" }],

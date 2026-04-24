@@ -9,10 +9,10 @@
  * Three ergonomic tiers:
  *
  *   Tier 1  zero-config           — extension uses the key's defaultModel
- *     vault.chat({ messages })
+ *     quill.chat({ messages })
  *
  *   Tier 2  capability-declared    — broker resolves best-fit model
- *     vault.chat({
+ *     quill.chat({
  *       messages, tools,
  *       requires: ["tool_use", "long_context"],
  *       tone: "precise",
@@ -20,7 +20,7 @@
  *     })
  *
  *   Tier 3  full control           — explicit model / temperature etc.
- *     vault.chat({
+ *     quill.chat({
  *       messages,
  *       prefer: { model: "gpt-5.4-pro", temperature: 1, reasoningEffort: "high" },
  *     })
@@ -187,7 +187,7 @@ export interface PreviewPlanRequest extends ChatParams {
   type: "previewPlan";
 }
 
-export type VaultRequest =
+export type KeyquillRequest =
   | { type: "ping" }
   | { type: "connect" }
   | { type: "disconnect" }
@@ -195,6 +195,12 @@ export type VaultRequest =
   | { type: "testKey"; keyId: string }
   | ChatRequest
   | PreviewPlanRequest;
+
+/**
+ * @deprecated renamed to `KeyquillRequest` — the `Vault` prefix is a
+ * pre-rebrand artefact. Scheduled for removal in the next SDK major.
+ */
+export type VaultRequest = KeyquillRequest;
 
 // ── Response Messages ─────────────────────────────────
 
@@ -205,7 +211,7 @@ export interface ChatCompletion {
   usage?: { promptTokens: number; completionTokens: number };
 }
 
-export type VaultResponse =
+export type KeyquillResponse =
   | { type: "pong"; version: string; protocol: number; connected?: boolean }
   | { type: "connected"; origin: string }
   | { type: "keys"; keys: KeySummary[] }
@@ -214,6 +220,12 @@ export type VaultResponse =
   | { type: "chatCompletion"; completion: ChatCompletion; keyId: string }
   | { type: "planPreview"; preview: PlanPreview }
   | { type: "error"; code: string; message: string };
+
+/**
+ * @deprecated renamed to `KeyquillResponse` — the `Vault` prefix is a
+ * pre-rebrand artefact. Scheduled for removal in the next SDK major.
+ */
+export type VaultResponse = KeyquillResponse;
 
 // ── Plan preview (dry-run resolver) ───────────────────
 
@@ -235,7 +247,7 @@ export interface PlanPreviewModel {
 }
 
 /**
- * Outcome of `vault.preview(params)` — a dry-run of the resolver that
+ * Outcome of `quill.preview(params)` — a dry-run of the resolver that
  * does NOT issue a provider fetch or open a consent popup.
  *
  * - `ready`            — the request would execute

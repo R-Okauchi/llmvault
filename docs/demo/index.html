@@ -169,7 +169,7 @@
     <script type="module">
       import { Keyquill } from "https://esm.sh/keyquill@1";
 
-      const vault = new Keyquill();
+      const quill = new Keyquill();
       const statusEl = document.querySelector("#status");
       const preConnect = document.querySelector("#pre-connect");
       const chat = document.querySelector("#chat");
@@ -185,14 +185,14 @@
       }
 
       async function refreshState() {
-        const available = await vault.isAvailable();
+        const available = await quill.isAvailable();
         if (!available) {
           setStatus("Extension not detected. Install it first.", "err");
           preConnect.hidden = false;
           chat.hidden = true;
           return;
         }
-        const connected = await vault.isConnected();
+        const connected = await quill.isConnected();
         if (!connected) {
           setStatus("Extension ready. Click Connect to grant this page access.");
           preConnect.hidden = false;
@@ -207,7 +207,7 @@
       connectBtn.addEventListener("click", async () => {
         connectBtn.disabled = true;
         try {
-          await vault.connect();
+          await quill.connect();
           await refreshState();
         } catch (err) {
           setStatus(`Connect failed: ${err.message || err}`, "err");
@@ -227,7 +227,7 @@
           // key policy picks the actual model, enforces budget, and records
           // to the audit ledger. Change `tone` to "precise" for coding or
           // "creative" for storytelling.
-          for await (const event of vault.chatStream({
+          for await (const event of quill.chatStream({
             messages: [{ role: "user", content: prompt }],
             tone: "balanced",
             maxOutput: 512,

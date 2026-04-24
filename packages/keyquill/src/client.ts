@@ -12,10 +12,10 @@
  *
  * Usage:
  *   import { Keyquill } from 'keyquill';
- *   const vault = new Keyquill();
- *   if (await vault.isAvailable()) {
- *     await vault.connect(); // shows consent popup + key picker on first use
- *     for await (const event of vault.chatStream({
+ *   const quill = new Keyquill();
+ *   if (await quill.isAvailable()) {
+ *     await quill.connect(); // shows consent popup + key picker on first use
+ *     for await (const event of quill.chatStream({
  *       messages: [{ role: 'user', content: 'Hello' }],
  *     })) {
  *       if (event.type === 'start') console.log(`Using ${event.label}`);
@@ -31,8 +31,8 @@ import type {
   ChatCompletion,
   PlanPreview,
   StreamEvent,
-  VaultRequest,
-  VaultResponse,
+  KeyquillRequest,
+  KeyquillResponse,
 } from "./types.js";
 export type {
   Capability,
@@ -83,9 +83,9 @@ export class Keyquill {
       return false;
     }
 
-    const res = await sendExtensionMessage<VaultResponse>(
+    const res = await sendExtensionMessage<KeyquillResponse>(
       id,
-      { type: "ping" } satisfies VaultRequest,
+      { type: "ping" } satisfies KeyquillRequest,
       this.timeout,
     );
 
@@ -102,9 +102,9 @@ export class Keyquill {
     const id = await this.resolveExtensionId();
     if (!id) return false;
 
-    const res = await sendExtensionMessage<VaultResponse>(
+    const res = await sendExtensionMessage<KeyquillResponse>(
       id,
-      { type: "ping" } satisfies VaultRequest,
+      { type: "ping" } satisfies KeyquillRequest,
       this.timeout,
     );
     return res?.type === "pong" && res.connected === true;
@@ -124,7 +124,7 @@ export class Keyquill {
     }
 
     // Protocol version check
-    const ping = await sendExtensionMessage<VaultResponse>(
+    const ping = await sendExtensionMessage<KeyquillResponse>(
       id,
       { type: "ping" },
       this.timeout,
@@ -136,9 +136,9 @@ export class Keyquill {
       );
     }
 
-    const res = await sendExtensionMessage<VaultResponse>(
+    const res = await sendExtensionMessage<KeyquillResponse>(
       id,
-      { type: "connect" } satisfies VaultRequest,
+      { type: "connect" } satisfies KeyquillRequest,
       timeoutMs,
     );
 
@@ -192,7 +192,7 @@ export class Keyquill {
    * Returns the full response plus the `keyId` that serviced the call.
    *
    * @example
-   * const { completion, keyId } = await vault.chat({
+   * const { completion, keyId } = await quill.chat({
    *   messages,
    *   requires: ["tool_use"],
    *   tone: "precise",
@@ -223,7 +223,7 @@ export class Keyquill {
    * Requires an active connection (call `connect()` first).
    *
    * @example
-   * const plan = await vault.preview({
+   * const plan = await quill.preview({
    *   messages: [{ role: "user", content: "..." }],
    *   requires: ["reasoning"],
    *   tone: "precise",
@@ -248,7 +248,7 @@ export class Keyquill {
    * First event is `{ type: "start", keyId, provider, label }`.
    *
    * @example
-   * for await (const event of vault.chatStream({ messages })) {
+   * for await (const event of quill.chatStream({ messages })) {
    *   if (event.type === "delta") process.stdout.write(event.text);
    * }
    */
@@ -278,7 +278,7 @@ export class Keyquill {
 
   // ── Private ──────────────────────────────────────
 
-  private async send(message: VaultRequest): Promise<VaultResponse> {
+  private async send(message: KeyquillRequest): Promise<KeyquillResponse> {
     const id = await this.resolveExtensionId();
     if (!id) {
       return {
@@ -288,7 +288,7 @@ export class Keyquill {
       };
     }
 
-    const res = await sendExtensionMessage<VaultResponse>(id, message, this.timeout);
+    const res = await sendExtensionMessage<KeyquillResponse>(id, message, this.timeout);
     if (!res) {
       return {
         type: "error",
@@ -304,7 +304,7 @@ export class Keyquill {
 
     const detected = detectExtensionId([]);
     if (detected) {
-      const res = await sendExtensionMessage<VaultResponse>(detected, { type: "ping" }, 2000);
+      const res = await sendExtensionMessage<KeyquillResponse>(detected, { type: "ping" }, 2000);
       if (res?.type === "pong") {
         this.extensionId = detected;
         return detected;
