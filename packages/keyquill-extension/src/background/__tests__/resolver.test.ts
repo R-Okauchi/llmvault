@@ -40,7 +40,6 @@ function mkKey(
     label: "Work",
     apiKey: "sk-test",
     baseUrl: "https://api.openai.com/v1",
-    isActive: true,
     policy,
     policyVersion: CURRENT_POLICY_VERSION,
     createdAt: 0,

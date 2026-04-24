@@ -130,13 +130,6 @@ export interface KeySummary {
    * catalog entry. Undefined when the catalog has no match.
    */
   effectiveDefaultModel?: string;
-  /**
-   * @deprecated use `effectiveDefaultModel`. Populated with the same
-   * value throughout the 1.x series to ease migration; scheduled for
-   * removal in the next SDK major.
-   */
-  defaultModel?: string;
-  isActive: boolean;
   policy?: KeyPolicySummary;
   keyHint: string | null;
   status: "active" | "error";

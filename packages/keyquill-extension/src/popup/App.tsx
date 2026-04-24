@@ -37,7 +37,6 @@ function App() {
   const [bindings, setBindings] = useState<OriginBinding[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingBinding, setEditingBinding] = useState<string | null>(null);
-  const [showActiveSwitcher, setShowActiveSwitcher] = useState(false);
   const [testResultKey, setTestResultKey] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -129,12 +128,6 @@ function App() {
     await loadBindings();
   }
 
-  async function handleSetActive(keyId: string) {
-    await sendMessage({ type: "setActive", keyId });
-    setShowActiveSwitcher(false);
-    await loadKeys();
-  }
-
   async function handleTest(keyId: string) {
     setTestResultKey(keyId);
     setTestResult("Testing...");
@@ -166,8 +159,6 @@ function App() {
     await loadBindings();
   }
 
-  const activeKey = keys.find((k) => k.isActive) ?? null;
-
   // Group keys by provider for visual organization
   const keysByProvider = new Map<string, KeySummary[]>();
   for (const k of keys) {
@@ -181,43 +172,6 @@ function App() {
       <h1>
         <img class="icon" src="/icons/icon-48.png" alt="" /> Keyquill
       </h1>
-
-      {activeKey && (
-        <div class="active-banner">
-          <div class="active-banner__info">
-            <span class="active-banner__label">Active key</span>
-            <span class="active-banner__name">
-              {activeKey.label}
-              <span class="active-banner__provider"> · {activeKey.provider}</span>
-            </span>
-          </div>
-          {keys.length > 1 && (
-            <button
-              class="btn btn--ghost btn--sm"
-              onClick={() => setShowActiveSwitcher((v) => !v)}
-            >
-              Switch
-            </button>
-          )}
-        </div>
-      )}
-
-      {activeKey && showActiveSwitcher && keys.length > 1 && (
-        <div class="active-switcher">
-          {keys
-            .filter((k) => !k.isActive)
-            .map((k) => (
-              <button
-                key={k.keyId}
-                class="active-switcher__item"
-                onClick={() => handleSetActive(k.keyId)}
-              >
-                <span class="active-switcher__name">{k.label}</span>
-                <span class="active-switcher__meta">{k.provider}</span>
-              </button>
-            ))}
-        </div>
-      )}
 
       <section class="section">
         <h2 class="section__title">Your keys ({keys.length})</h2>
@@ -246,14 +200,9 @@ function App() {
                 }
               };
               return (
-              <div key={k.keyId} class={`key-card ${k.isActive ? "key-card--active" : ""}`}>
+              <div key={k.keyId} class="key-card">
                 <div class="key-card__header">
                   <span class="key-card__label">{k.label}</span>
-                  {k.isActive && (
-                    <span class="key-card__badge" title="Active key">
-                      ⭐
-                    </span>
-                  )}
                 </div>
                 <div class="key-card__meta">
                   <span class="key-card__hint">{k.keyHint}</span>
@@ -261,11 +210,6 @@ function App() {
                 </div>
                 <SpendBar keyId={k.keyId} budgetUSD={k.policy?.budget.monthlyBudgetUSD} />
                 <div class="key-card__actions">
-                  {!k.isActive && (
-                    <button class="btn btn--ghost btn--sm" onClick={() => handleSetActive(k.keyId)}>
-                      Set active
-                    </button>
-                  )}
                   <button class="btn btn--secondary btn--sm" onClick={() => handleTest(k.keyId)}>
                     Test
                   </button>

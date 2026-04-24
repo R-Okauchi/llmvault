@@ -26,7 +26,6 @@ import {
   updateKey,
   updatePolicy,
   deleteKey,
-  setActive,
 } from "./keyStore.js";
 import { queryByKey, getMonthSpend, exportCSV } from "./ledger.js";
 import {
@@ -187,7 +186,6 @@ export async function handleMessage(
           apiKey: request.apiKey,
           baseUrl: request.baseUrl,
           defaultModel: request.defaultModel,
-          isActive: request.isActive,
         });
         return { type: "ok" };
       } catch (err) {
@@ -236,18 +234,6 @@ export async function handleMessage(
         };
       }
       await deleteKey(request.keyId);
-      return { type: "ok" };
-    }
-
-    case "setActive": {
-      if (!isInternal(sender)) {
-        return {
-          type: "error",
-          code: "BLOCKED",
-          message: "Use the Keyquill extension popup to change the active key.",
-        };
-      }
-      await setActive(request.keyId);
       return { type: "ok" };
     }
 

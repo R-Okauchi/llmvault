@@ -60,10 +60,8 @@ const {
   addKey,
   getKeys,
   getKeySummaries,
-  setActive,
   deleteKey,
   updateKey,
-  getActiveKey,
 } = await import("../keyStore.js");
 const { getBindings, setBinding } = await import("../bindingStore.js");
 
@@ -73,11 +71,11 @@ function reset() {
   uuidCounter = 0;
 }
 
-describe("keyStore v3 (active-key model)", () => {
+describe("keyStore (post-Phase-17a — no wallet-wide active)", () => {
   beforeEach(reset);
 
   describe("addKey", () => {
-    it("marks the first key as active automatically", async () => {
+    it("stores the first key as a plain record", async () => {
       await addKey({
         provider: "openai",
         label: "Work",
@@ -87,7 +85,7 @@ describe("keyStore v3 (active-key model)", () => {
       });
       const keys = await getKeys();
       expect(keys).toHaveLength(1);
-      expect(keys[0].isActive).toBe(true);
+      expect(keys[0].label).toBe("Work");
     });
 
     it("rejects empty label", async () => {
@@ -102,7 +100,7 @@ describe("keyStore v3 (active-key model)", () => {
       ).rejects.toThrow(/label is required/);
     });
 
-    it("leaves the existing active key alone when a second is added without flag", async () => {
+    it("appends the second key without touching the first", async () => {
       await addKey({
         provider: "openai",
         label: "Work",
@@ -119,92 +117,12 @@ describe("keyStore v3 (active-key model)", () => {
       });
       const keys = await getKeys();
       expect(keys).toHaveLength(2);
-      expect(keys.find((k) => k.label === "Work")!.isActive).toBe(true);
-      expect(keys.find((k) => k.label === "Claude")!.isActive).toBe(false);
-    });
-
-    it("demotes the previous active when a new key is added with isActive=true", async () => {
-      await addKey({
-        provider: "openai",
-        label: "Work",
-        apiKey: "sk-w",
-        baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-4.1-mini",
-      });
-      await addKey({
-        provider: "anthropic",
-        label: "Claude",
-        apiKey: "ant-k",
-        baseUrl: "https://api.anthropic.com/v1",
-        defaultModel: "claude-sonnet-4",
-        isActive: true,
-      });
-      const keys = await getKeys();
-      expect(keys.find((k) => k.label === "Work")!.isActive).toBe(false);
-      expect(keys.find((k) => k.label === "Claude")!.isActive).toBe(true);
-    });
-  });
-
-  describe("setActive", () => {
-    it("switches the wallet-wide active key exclusively", async () => {
-      await addKey({
-        provider: "openai",
-        label: "Work",
-        apiKey: "sk-w",
-        baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-4.1-mini",
-      });
-      const personal = await addKey({
-        provider: "openai",
-        label: "Personal",
-        apiKey: "sk-p",
-        baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-4.1-mini",
-      });
-      await addKey({
-        provider: "anthropic",
-        label: "Claude",
-        apiKey: "ant-k",
-        baseUrl: "https://api.anthropic.com/v1",
-        defaultModel: "claude-sonnet-4",
-      });
-
-      await setActive(personal.keyId);
-      const keys = await getKeys();
-      expect(keys.filter((k) => k.isActive).map((k) => k.label)).toEqual(["Personal"]);
-    });
-  });
-
-  describe("getActiveKey", () => {
-    it("returns the active key, regardless of provider", async () => {
-      await addKey({
-        provider: "openai",
-        label: "Work",
-        apiKey: "sk-w",
-        baseUrl: "https://api.openai.com/v1",
-        defaultModel: "gpt-4.1-mini",
-      });
-      const anth = await addKey({
-        provider: "anthropic",
-        label: "Claude",
-        apiKey: "ant-k",
-        baseUrl: "https://api.anthropic.com/v1",
-        defaultModel: "claude-sonnet-4",
-        isActive: true,
-      });
-      const active = await getActiveKey();
-      expect(active?.keyId).toBe(anth.keyId);
-      expect(active?.label).toBe("Claude");
-    });
-
-    it("returns null for empty wallet", async () => {
-      const active = await getActiveKey();
-      expect(active).toBeNull();
+      expect(keys.map((k) => k.label)).toEqual(["Work", "Claude"]);
     });
   });
 
   describe("deleteKey", () => {
-    it("promotes most-recently-updated sibling when the active key is deleted", async () => {
+    it("removes the record and leaves siblings intact", async () => {
       const work = await addKey({
         provider: "openai",
         label: "Work",
@@ -224,7 +142,6 @@ describe("keyStore v3 (active-key model)", () => {
       const keys = await getKeys();
       expect(keys).toHaveLength(1);
       expect(keys[0].label).toBe("Personal (updated)");
-      expect(keys[0].isActive).toBe(true);
     });
 
     it("cascades: drops bindings that referenced the deleted key", async () => {
@@ -256,7 +173,7 @@ describe("keyStore v3 (active-key model)", () => {
   });
 
   describe("v1 migration", () => {
-    it("migrates keyquill_providers → keyquill_keys with first entry active", async () => {
+    it("migrates keyquill_providers → keyquill_keys; legacy flags are stripped", async () => {
       storage["keyquill_providers"] = [
         {
           provider: "openai",
@@ -271,14 +188,18 @@ describe("keyStore v3 (active-key model)", () => {
       const keys = await getKeys();
       expect(keys).toHaveLength(1);
       expect(keys[0].label).toBe("Legacy");
-      expect(keys[0].isActive).toBe(true);
       expect(keys[0].keyId).toMatch(/^uuid-/);
       expect(storage["keyquill_providers"]).toBeUndefined();
+      const persisted = (storage["keyquill_keys"] as Array<
+        Record<string, unknown>
+      >)[0];
+      expect(persisted).not.toHaveProperty("isActive");
+      expect(persisted).not.toHaveProperty("defaultModel");
     });
   });
 
-  describe("v2 migration (isDefault → isActive)", () => {
-    it("coerces v2 records: most-recently-updated per-provider default becomes active", async () => {
+  describe("legacy active/default flags on read", () => {
+    it("strips `isDefault` + `isActive` from stored v2/v3 records", async () => {
       storage["keyquill_keys"] = [
         {
           keyId: "a",
@@ -288,6 +209,7 @@ describe("keyStore v3 (active-key model)", () => {
           baseUrl: "https://api.openai.com/v1",
           defaultModel: "gpt-4o",
           isDefault: true,
+          isActive: true,
           createdAt: 100,
           updatedAt: 200,
         },
@@ -299,41 +221,24 @@ describe("keyStore v3 (active-key model)", () => {
           baseUrl: "https://api.anthropic.com/v1",
           defaultModel: "claude-sonnet-4",
           isDefault: true,
+          isActive: false,
           createdAt: 100,
-          updatedAt: 300, // more recent
+          updatedAt: 300,
         },
       ];
       const keys = await getKeys();
-      expect(keys.find((k) => k.keyId === "a")!.isActive).toBe(false);
-      expect(keys.find((k) => k.keyId === "b")!.isActive).toBe(true);
-    });
-
-    it("v2 records with no defaults → first entry becomes active", async () => {
-      storage["keyquill_keys"] = [
-        {
-          keyId: "a",
-          provider: "openai",
-          label: "Work",
-          apiKey: "sk-w",
-          baseUrl: "https://api.openai.com/v1",
-          defaultModel: "gpt-4o",
-          createdAt: 100,
-          updatedAt: 100,
-        },
-        {
-          keyId: "b",
-          provider: "anthropic",
-          label: "Claude",
-          apiKey: "ant-k",
-          baseUrl: "https://api.anthropic.com/v1",
-          defaultModel: "claude-sonnet-4",
-          createdAt: 200,
-          updatedAt: 200,
-        },
-      ];
-      const keys = await getKeys();
-      expect(keys[0].isActive).toBe(true);
-      expect(keys[1].isActive).toBe(false);
+      expect(keys).toHaveLength(2);
+      // No record exposes isActive / isDefault any more.
+      for (const k of keys) {
+        expect(k).not.toHaveProperty("isActive");
+        expect(k).not.toHaveProperty("isDefault");
+      }
+      // Storage has been rewritten without the legacy flags too.
+      const persisted = storage["keyquill_keys"] as Array<Record<string, unknown>>;
+      for (const p of persisted) {
+        expect(p).not.toHaveProperty("isActive");
+        expect(p).not.toHaveProperty("isDefault");
+      }
     });
   });
 
@@ -354,7 +259,7 @@ describe("keyStore v3 (active-key model)", () => {
       expect(keys[0].policy?.privacy.requireHttps).toBe(true);
       expect(keys[0].policy?.behavior.autoFallback).toBe(true);
       expect(keys[0].policy?.sampling).toBeUndefined();
-      expect(keys[0].policyVersion).toBe(2);
+      expect(keys[0].policyVersion).toBe(3);
     });
 
     it("addKey without defaultModel leaves policy.modelPolicy.defaultModel unset", async () => {
@@ -391,7 +296,7 @@ describe("keyStore v3 (active-key model)", () => {
       expect(keys[0].policy?.sampling?.temperature).toBe(0.7);
       expect(keys[0].policy?.budget.maxReasoningEffort).toBe("high");
       expect(keys[0].policy?.modelPolicy.defaultModel).toBe("gpt-4o");
-      expect(keys[0].policyVersion).toBe(2);
+      expect(keys[0].policyVersion).toBe(3);
       // Storage should be rewritten with the legacy defaultModel stripped.
       const persisted = (storage["keyquill_keys"] as Array<
         Record<string, unknown>
@@ -429,7 +334,7 @@ describe("keyStore v3 (active-key model)", () => {
       expect(keys[0].policy?.modelPolicy.mode).toBe("allowlist");
       expect(keys[0].policy?.budget.monthlyBudgetUSD).toBe(5);
       expect(keys[0].policy?.behavior.autoFallback).toBe(false);
-      expect(keys[0].policyVersion).toBe(2);
+      expect(keys[0].policyVersion).toBe(3);
       const persisted = (storage["keyquill_keys"] as Array<
         Record<string, unknown>
       >)[0];
@@ -524,7 +429,7 @@ describe("keyStore v3 (active-key model)", () => {
       const persisted = (storage["keyquill_keys"] as Array<
         Record<string, unknown>
       >)[0];
-      expect(persisted.policyVersion).toBe(2);
+      expect(persisted.policyVersion).toBe(3);
       expect(persisted).not.toHaveProperty("defaultModel");
     });
   });

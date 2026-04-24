@@ -21,7 +21,7 @@ import type {
   KeyRecord,
   ChatParams,
 } from "../shared/protocol.js";
-import { getKey, getActiveKey } from "./keyStore.js";
+import { getKey, getFirstKey } from "./keyStore.js";
 import { getBinding, touchBindingUsage } from "./bindingStore.js";
 import {
   parseAnthropicCompletion,
@@ -60,7 +60,11 @@ export async function resolveKey(
       }
     }
   }
-  return await getActiveKey();
+  // Defensive fallback only — reached when there's no explicit keyId
+  // and no binding (e.g., extension-internal callers, which are none
+  // in production). External traffic is gated by requireGrant → a
+  // binding must exist before the resolver ever runs.
+  return await getFirstKey();
 }
 
 // ── v1 ChatParams → ResolverRequest translator ─────────

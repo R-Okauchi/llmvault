@@ -94,9 +94,8 @@ export function PolicyEditor({
       label: "",
       apiKey: "",
       baseUrl: "",
-      isActive: true,
       policy,
-      policyVersion: 2,
+      policyVersion: 3,
       createdAt: 0,
       updatedAt: 0,
     };

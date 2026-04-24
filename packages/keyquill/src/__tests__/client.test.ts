@@ -117,8 +117,7 @@ describe("Keyquill v2 SDK", () => {
           provider: "openai",
           label: "Work",
           baseUrl: "https://api.openai.com/v1",
-          defaultModel: "gpt-4.1-mini",
-          isActive: true,
+          effectiveDefaultModel: "gpt-4.1-mini",
           keyHint: "sk-t...est1",
           status: "active" as const,
           createdAt: 1000,
@@ -129,8 +128,7 @@ describe("Keyquill v2 SDK", () => {
           provider: "openai",
           label: "Personal",
           baseUrl: "https://api.openai.com/v1",
-          defaultModel: "gpt-4.1-mini",
-          isActive: false,
+          effectiveDefaultModel: "gpt-4.1-mini",
           keyHint: "sk-p...est2",
           status: "active" as const,
           createdAt: 2000,
@@ -147,7 +145,7 @@ describe("Keyquill v2 SDK", () => {
       const result = await promise;
       expect(result).toHaveLength(2);
       expect(result[0].label).toBe("Work");
-      expect(result[0].isActive).toBe(true);
+      expect(result[0].effectiveDefaultModel).toBe("gpt-4.1-mini");
     });
   });
 

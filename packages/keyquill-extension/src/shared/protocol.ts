@@ -202,8 +202,10 @@ export const DEFAULT_KEY_POLICY: KeyPolicy = {
  *   1 — initial v1.0 broker shape (Phase 3).
  *   2 — Phase 13d: `defaultModel` moved from the KeyRecord top level into
  *       `policy.modelPolicy.defaultModel`; legacy field stripped on read.
+ *   3 — Phase 17a: `isActive` dropped from KeyRecord. Per-origin
+ *       bindings are the only active-routing concept.
  */
-export const CURRENT_POLICY_VERSION = 2;
+export const CURRENT_POLICY_VERSION = 3;
 
 export interface KeyRecord {
   keyId: string;           // UUID v4, immutable
@@ -211,7 +213,6 @@ export interface KeyRecord {
   label: string;           // required, user-facing name
   apiKey: string;
   baseUrl: string;
-  isActive?: boolean;      // invariant: at most one key across the wallet is true
   /** @deprecated see KeyDefaults. Migrated into `policy` on read. */
   defaults?: KeyDefaults;
   /** v1.0 policy. Populated on read via migration for legacy records. */
@@ -235,16 +236,6 @@ export interface KeySummary {
   label: string;
   baseUrl: string;
   effectiveDefaultModel?: string;
-  /**
-   * @deprecated use `effectiveDefaultModel`. Retained through the 1.x
-   * series as a compatibility alias for SDK consumers that predated
-   * Phase 13d; always carries the same value as `effectiveDefaultModel`
-   * and will be removed in the next SDK major.
-   */
-  defaultModel?: string;
-  isActive: boolean;
-  /** @deprecated migrated into `policy.sampling` + `policy.budget.maxReasoningEffort`. */
-  defaults?: KeyDefaults;
   policy?: KeyPolicy;
   policyVersion?: number;
   keyHint: string | null;   // "sk-t...st12" mask, null if unavailable
@@ -343,7 +334,6 @@ export type IncomingRequest =
        * no preset fallback exists.
        */
       defaultModel?: string;
-      isActive?: boolean;
     }
   | {
       type: "updateKey";
@@ -353,7 +343,6 @@ export type IncomingRequest =
       apiKey?: string;
     }
   | { type: "deleteKey"; keyId: string }
-  | { type: "setActive"; keyId: string }
   | { type: "testKey"; keyId: string }
   | { type: "getBindings" }
   | { type: "setBinding"; origin: string; keyId: string }

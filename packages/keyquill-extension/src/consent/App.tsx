@@ -12,7 +12,11 @@
 
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { KeySummary, OutgoingResponse } from "../shared/protocol.js";
+import type {
+  KeySummary,
+  OriginBinding,
+  OutgoingResponse,
+} from "../shared/protocol.js";
 import { ext } from "../shared/browser.js";
 
 type RequestReason =
@@ -54,13 +58,34 @@ function OriginTrust({ origin }: { origin: string }) {
   const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
 
   useEffect(() => {
-    ext.runtime.sendMessage({ type: "listKeys" }, (res: unknown) => {
-      const r = res as OutgoingResponse;
-      if (r.type === "keys") {
-        setKeys(r.keys);
-        const def = r.keys.find((k) => k.isActive) ?? r.keys[0];
-        if (def) setSelectedKeyId(def.keyId);
+    // Fetch keys and bindings in parallel. Preselect the key that
+    // services the user's most-recently-used binding (a reasonable
+    // proxy for "which key you probably meant to use"), falling back
+    // to the first key in insertion order when no bindings exist yet.
+    Promise.all([
+      new Promise<OutgoingResponse>((resolve) => {
+        ext.runtime.sendMessage({ type: "listKeys" }, (r: unknown) =>
+          resolve(r as OutgoingResponse),
+        );
+      }),
+      new Promise<OutgoingResponse>((resolve) => {
+        ext.runtime.sendMessage({ type: "getBindings" }, (r: unknown) =>
+          resolve(r as OutgoingResponse),
+        );
+      }),
+    ]).then(([keysRes, bindingsRes]) => {
+      if (keysRes.type !== "keys" || keysRes.keys.length === 0) return;
+      setKeys(keysRes.keys);
+
+      let preferred: KeySummary | undefined;
+      if (bindingsRes.type === "bindings" && bindingsRes.bindings.length > 0) {
+        const mostRecent = [...bindingsRes.bindings].sort(
+          (a: OriginBinding, b: OriginBinding) =>
+            (b.lastUsedAt ?? b.grantedAt) - (a.lastUsedAt ?? a.grantedAt),
+        )[0];
+        preferred = keysRes.keys.find((k) => k.keyId === mostRecent.keyId);
       }
+      setSelectedKeyId((preferred ?? keysRes.keys[0]).keyId);
     });
   }, []);
 
@@ -102,14 +127,7 @@ function OriginTrust({ origin }: { origin: string }) {
                   onChange={() => setSelectedKeyId(k.keyId)}
                 />
                 <div class="picker__label">
-                  <span class="picker__name">
-                    {k.label}
-                    {k.isActive && (
-                      <span class="picker__star" title="Active">
-                        ⭐
-                      </span>
-                    )}
-                  </span>
+                  <span class="picker__name">{k.label}</span>
                   <span class="picker__meta">
                     {k.provider} · {k.keyHint}
                   </span>
