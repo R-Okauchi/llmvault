@@ -1,6 +1,6 @@
 {
   "name": "keyquill",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Bring Your Own Key to any web app — without trusting their server. Browser extension SDK for secure LLM API key management.",
   "type": "module",
   "main": "./dist/index.js",
