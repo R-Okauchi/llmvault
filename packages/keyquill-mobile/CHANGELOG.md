@@ -1,5 +1,32 @@
 # keyquill-mobile
 
+## 1.1.0
+
+### Minor Changes
+
+- 90f169b: Add `KeySummary.effectiveDefaultModel` — the model the resolver would pick
+  for a zero-config request, computed by walking `policy.modelPolicy.defaultModel`
+  → provider preset default → cheapest catalog entry.
+
+  `KeySummary.defaultModel` is now a deprecated alias for the same value and
+  will be removed in the next SDK major. No migration is required in the 1.x
+  series; existing code reading `summary.defaultModel` keeps receiving the
+  same resolver-chosen model it did before.
+
+- 8b021b6: Add `vault.preview(params)` — a dry-run of the resolver that returns what
+  model would service a given request, its estimated cost and token usage,
+  and whether any consent prompts or policy rejections would fire. Does not
+  issue a provider fetch or open a consent popup, so callers can surface
+  cost previews or "this will need approval" hints ahead of time.
+
+  Returns a `PlanPreview` discriminated union:
+  - `{ kind: "ready", model, estimatedCostUSD, estimatedTokens, selectionReason, ... }`
+  - `{ kind: "consent-required", reason, message, proposedModel? }`
+  - `{ kind: "rejected", reason, message }`
+
+  Also exports `PlanPreview`, `PlanPreviewModel`, `ConsentReason`, and
+  `PreviewPlanRequest` from the SDK root.
+
 ## 1.0.2
 
 ### Patch Changes
