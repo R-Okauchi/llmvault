@@ -37,7 +37,7 @@ submission/
 7. Store listing → **Screenshots**: upload 2–3 images from `screenshots/` (1280×800).
 8. Store listing → **Small promotional tile** (440×280): upload `promo/tile-440x280.png`.
 9. Privacy practices → **Single purpose**: paste `chrome/single-purpose.md`.
-10. Privacy practices → **Permission justifications**: paste `chrome/permissions-justification.md` into the `storage` and `content_scripts` rationale fields.
+10. Privacy practices → **Permission justifications**: paste `chrome/permissions-justification.md` into the `storage`, `activeTab`, and `content_scripts` rationale fields.
 11. Privacy practices → **Data usage**: fill the form following `chrome/data-usage.md` (checkboxes + privacy policy URL).
 12. Privacy practices → **Privacy policy URL**: `https://r-okauchi.github.io/keyquill/privacy-policy`
 13. Distribution → **Visibility**: Unlisted (flip to Public after QA).
