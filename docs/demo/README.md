@@ -30,15 +30,15 @@ python3 -m http.server 8080 --directory docs
 
 ```html
 <script type="module">
-  import { Keyquill } from "https://esm.sh/keyquill@1";
+  import { Keyquill } from "https://esm.sh/keyquill@3";
 </script>
 ```
 
-We import directly from [esm.sh](https://esm.sh) so there's no build tooling. Pinned to major version `@1` so patch/minor updates flow automatically while breaking majors require an intentional bump. (`keyquill@1.x` on npm carries the capability-first "v2 API" — see the note in the SDK README for the naming disambiguation.)
+We import directly from [esm.sh](https://esm.sh) so there's no build tooling. Pinned to major version `@3` — the current major line — so patch/minor updates flow automatically while breaking majors require an intentional bump. (`keyquill@0.3.x` is the legacy snake-case API and remains available on npm if you're pinning an older app.)
 
 ## SDK v2 usage in this demo
 
-The chat call uses the v2 capability-first API: it declares behavioural intent (`tone`, `maxOutput`) rather than picking a concrete model. The extension's broker resolves the request against the user's KeyPolicy and records every call in the audit ledger.
+The chat call uses the capability-first API: it declares behavioural intent (`tone`, `maxOutput`) rather than picking a concrete model. The extension's broker resolves the request against the user's KeyPolicy and records every call in the audit ledger.
 
 ```js
 for await (const event of quill.chatStream({

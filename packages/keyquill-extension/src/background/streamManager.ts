@@ -67,14 +67,15 @@ export async function resolveKey(
   return await getFirstKey();
 }
 
-// ── v1 ChatParams → ResolverRequest translator ─────────
+// ── ChatParams → ResolverRequest translator ───────────
 
 /**
- * Translate wire-level ChatParams (either v1 or v2 shape) into the
- * resolver's ResolverRequest. Prefers v2 fields when present, falls
- * back to translating v1 snake_case fields otherwise. This lets us
- * accept both SDK v1 (frozen at keyquill@0.3.x) and SDK v2 (keyquill@1.x)
- * clients simultaneously.
+ * Translate wire-level ChatParams (either the current capability-first
+ * shape or the legacy snake_case shape from `keyquill@0.3.x`) into the
+ * resolver's ResolverRequest. Prefers the current fields when present,
+ * falls back to translating snake_case fields otherwise — this lets
+ * legacy `keyquill@0.3.x` clients keep talking to the same installed
+ * extension alongside current `keyquill@3.x` clients.
  */
 export function toResolverRequest(
   params: ChatParams & { maxTokens?: number },

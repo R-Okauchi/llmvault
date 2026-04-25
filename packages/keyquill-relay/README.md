@@ -6,7 +6,7 @@
 >
 > `RelayInnerRequest` currently carries `{ provider, messages, systemPrompt, maxTokens }` — the
 > same wire shape the [`keyquill-mobile`](../keyquill-mobile) plugin
-> accepts, **not** the capability-first v2 shape used by `keyquill@1.x` and
+> accepts, **not** the capability-first shape used by `keyquill@3.x` and
 > `keyquill-extension@1.0+`. That's intentional for now: relay is a pure
 > transport whose payload is defined by the mobile endpoint it talks to.
 > When mobile migrates to the broker architecture (see the note in the

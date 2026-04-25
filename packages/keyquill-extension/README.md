@@ -14,7 +14,7 @@ A BYOK (Bring Your Own Key) wallet for web applications. Stores LLM API keys in 
 - **Audit ledger** — every request written to `chrome.storage.local` with timestamp, origin, model, token usage, cost estimate + actual. 90-day retention, CSV export, cascade-clear on key delete.
 - **Consent UX** — per-request approval popup (once / always / reject) when the resolver flags a policy violation. 5-minute in-memory cache suppresses repeat popups.
 - **Localised errors** — en / ja tables, auto-detect via `chrome.i18n.getUILanguage()`. All policy codes get user-actionable sentences.
-- **SDK v2** — capability-first API, published as `keyquill@1.x` on npm (see the [SDK README](../keyquill/README.md) for the v1/v2-API vs. npm semver disambiguation). v1 SDK clients (`@0.3.x`) continue to work against the same extension via an in-extension wire translator.
+- **Capability-first SDK** — published as `keyquill@3.x` on npm. Legacy snake_case SDK clients (`@0.3.x`) continue to work against the same extension via an in-extension wire translator.
 
 Popup additions per key card:
 - **Spend bar** (monthly total + budget progress)
@@ -69,7 +69,7 @@ pnpm add keyquill
 ```
 
 ```typescript
-import { Keyquill } from "keyquill"; // v2 capability-first API
+import { Keyquill } from "keyquill";
 
 const quill = new Keyquill();
 

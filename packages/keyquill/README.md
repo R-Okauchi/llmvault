@@ -44,11 +44,9 @@ Your Web App                    Keyquill Extension                  LLM Provider
 npm install keyquill
 ```
 
-### 2. Use in your app (v2 capability-first API)
+### 2. Use in your app
 
-`keyquill@1` uses a **capability-first** API — the app declares what it needs, the user's policy picks the actual model. Three ergonomic tiers:
-
-> **Naming note.** The capability-first API is internally called "v2 API" (distinct from the legacy snake-case "v1 API" that shipped as `keyquill@0.3.x`). On npm these two API shapes live at different major versions: `keyquill@0.3.x` = v1 API (frozen), `keyquill@1.x` = v2 API (current). The product-level "v1 / v2" label and the npm semver major are independent axes; every time you see `keyquill@1` below, it's the v2 capability-first shape.
+`keyquill@3` (current major) uses a **capability-first** API — the app declares what it needs, the user's policy picks the actual model. Three ergonomic tiers:
 
 ```typescript
 import { Keyquill } from "keyquill";
@@ -133,7 +131,7 @@ if (await quill.isAvailable()) {
     if (event.type === "delta") process.stdout.write(event.text);
   }
 
-  // ── Preview: dry-run before committing (keyquill@1.1+) ───
+  // ── Preview: dry-run before committing ───
   // Tells you which model would run, the estimated cost, and whether a
   // consent prompt would fire — without actually sending the request.
   const plan = await quill.preview({
@@ -296,7 +294,7 @@ type PlanPreview =
 ```
 
 Preview requires an active connection — a compromised origin cannot probe
-the user's policy without prior consent. Available since `keyquill@1.1.0`.
+the user's policy without prior consent.
 
 ### ChatParams (shared by `chat` and `chatStream`)
 
@@ -307,7 +305,7 @@ interface ChatParams {
   toolChoice?: ToolChoice;     // "none" | "auto" | "required" | specific
   responseFormat?: ResponseFormat; // "text" | "json_object" | "json_schema"
 
-  // v2 capability-first fields
+  // Capability-first fields
   requires?: Capability[];     // capabilities the broker must satisfy
   tone?: "precise" | "balanced" | "creative";
   maxOutput?: number;          // max output tokens (clamped by policy)
@@ -328,11 +326,15 @@ type Capability =
   | "fast" | "cheap" | "multilingual" | "code";
 ```
 
-## Migrating from `keyquill@0.3.x` → `keyquill@1`
+## Migration history
 
-The legacy v1 API (`keyquill@0.3.x`) remains available on npm — pin it if you're not ready to migrate. The capability-first v2 API (shipping as `keyquill@1`) deletes v1 top-level fields:
+### From the legacy `keyquill@0.3.x` (snake_case) API
 
-| v1 (`@0.3.x`) | v2 (`@2`) |
+Pin it if you're not ready to migrate — it still works against the
+installed extension via an internal wire translator. When you migrate
+to `@3`, rewrite the top-level fields per this table:
+
+| `@0.3.x` (legacy) | `@3` (current) |
 | --- | --- |
 | `model: "gpt-4o"` | `prefer: { model: "gpt-4o" }` |
 | `temperature: 0.7` | `prefer: { temperature: 0.7 }` &nbsp;— or&nbsp; `tone: "balanced"` |
@@ -345,12 +347,23 @@ The legacy v1 API (`keyquill@0.3.x`) remains available on npm — pin it if you'
 | `provider: "openai"` | `prefer: { provider: "openai" }` |
 | `stop: [...]` | (removed — not commonly used, re-request if needed) |
 
-The extension (`keyquill-extension@1.0+`) accepts **both wire shapes simultaneously** via an internal translator. So you can migrate one app at a time, on your own schedule — existing v1 apps keep running unchanged against the same installed extension.
+### Between majors since `@1`
+
+If you're coming from `@1.x` or `@2.x`, the ChatParams shape is
+identical — only a few type names on the SDK surface changed:
+
+| Deprecated name | Replacement | Removed in |
+| --- | --- | --- |
+| `VaultRequest` | `KeyquillRequest` | `@2` |
+| `VaultResponse` | `KeyquillResponse` | `@2` |
+| `KeySummary.defaultModel` | `KeySummary.effectiveDefaultModel` | `@3` |
+| `KeySummary.defaults` | `KeySummary.policy` | `@3` |
+| `KeySummary.isActive` | _(removed — per-origin bindings drive routing)_ | `@3` |
 
 ```bash
-# Upgrade path
-npm install keyquill@1       # v2 capability-first API (current)
-npm install keyquill@0.3.2   # v1 legacy API (frozen — pin if migrating later)
+# Install
+npm install keyquill@3       # current
+npm install keyquill@0.3.2   # legacy snake_case API (frozen)
 ```
 
 ## Supported Providers
