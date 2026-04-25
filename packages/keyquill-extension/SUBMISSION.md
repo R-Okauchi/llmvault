@@ -14,7 +14,7 @@ User-visible deltas:
   add-key form shrinks to `provider / label / API key` for preset providers
   (`custom` keeps its Base URL + Model inputs). Keys from v1.0 migrate on
   first read — no data loss.
-- **`quill.preview(params)` in the SDK** (`keyquill@1.1.0`) — a dry-run of the
+- **`quill.preview(params)` in the SDK** (`keyquill@3.x`) — a dry-run of the
   resolver that returns which model would run, estimated cost, and whether
   any consent prompt or policy rejection would fire, without issuing a
   provider fetch.
@@ -29,7 +29,7 @@ Keyquill-operated backend.
 - **Policy editor** in the popup: per-key allowlist / denylist / budget caps / privacy rules / sampling defaults
 - **Audit ledger**: every request stored locally (90-day retention) with origin, model, tokens, and cost. Export to CSV
 - **Consent popup** in request-approval mode (model / cost / reason with once / always / reject)
-- **Capability-first SDK** (`keyquill@1.x`) — apps declare intent, user policy picks the model
+- **Capability-first SDK** (`keyquill@3.x`) — apps declare intent, user policy picks the model
 - **Localized error messages** (English + Japanese, auto-detected from browser UI language)
 
 The update flow from 0.3.x remains non-destructive — legacy `KeyDefaults`

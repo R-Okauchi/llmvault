@@ -43,7 +43,7 @@ Confirmed: OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek, Together A
 
 ### For developers
 
-Integrate Keyquill in your web app (v2 capability-first API):
+Integrate Keyquill in your web app with the official SDK:
 
 ```
 npm install keyquill

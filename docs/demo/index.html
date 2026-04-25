@@ -167,7 +167,7 @@
     </div>
 
     <script type="module">
-      import { Keyquill } from "https://esm.sh/keyquill@1";
+      import { Keyquill } from "https://esm.sh/keyquill@3";
 
       const quill = new Keyquill();
       const statusEl = document.querySelector("#status");
@@ -223,7 +223,7 @@
         sendBtn.disabled = true;
         output.textContent = "";
         try {
-          // v2 capability-first API: declare tone + output cap. The user's
+          // Capability-first API: declare tone + output cap. The user's
           // key policy picks the actual model, enforces budget, and records
           // to the audit ledger. Change `tone` to "precise" for coding or
           // "creative" for storytelling.
