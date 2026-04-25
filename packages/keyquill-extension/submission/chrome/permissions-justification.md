@@ -17,10 +17,22 @@ Keyquill is a BYOK wallet SDK. The set of web apps that may want to request LLM 
 
 This is the same threat model as MetaMask's `eth_requestAccounts` flow.
 
+## `activeTab`
+
+Used by the extension popup to identify which site the user is currently on, so the popup can surface:
+
+- the host (`example.com`) of the active tab
+- which stored key (if any) is bound to that origin
+- one-click actions to change the bound key or disconnect the site
+
+`activeTab` is a narrower alternative to `tabs` + `<all_urls>` — it grants access only when the user explicitly invokes the extension (clicks the toolbar icon to open the popup). No background polling, no history access, no script injection into arbitrary pages.
+
+The popup only reads `tab.url` to extract the origin. No page content or DOM is accessed.
+
 ## What we do NOT request
 
 - No `host_permissions` or `<all_urls>` in the permissions field.
-- No `tabs`, `activeTab`, `history`, `cookies`, `identity`, or `webRequest`.
+- No `tabs`, `history`, `cookies`, `identity`, or `webRequest`.
 - No access to page DOM. The content script only relays messages.
 
 The extension's service worker contacts LLM provider APIs (api.openai.com, etc.) via `fetch` using the standard CORS-exempt service-worker path; no additional host permission is required.
